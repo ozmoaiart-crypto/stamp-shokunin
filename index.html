@@ -22,7 +22,7 @@
 </style>
 </head>
 <body>
-<h1>🎀 スタンプ職人（Oz専用 v1.9）</h1>
+<h1>🎀 スタンプ職人（Oz専用 v1.9.1）</h1>
 <p class="small">シート／単体イラスト（文字なし）を読み込むと、切り分け → ふちなし透過 → 仕上げ → 書き出しまで自動。常時「高品質モード」：LINE仕様の上限いっぱいまで色数・解像度を自動で最大化します。</p>
 
 <div class="row">
@@ -281,6 +281,24 @@ function trimCanvas(src) {
   c.width = maxX - minX + 1; c.height = maxY - minY + 1;
   c.getContext("2d").drawImage(src, minX, minY, c.width, c.height, 0, 0, c.width, c.height);
   return c;
+}
+/* edge pixels of a white-bg cut are blended with white; undo that blend so
+   the silhouette edge shows the true foreground colour (no white halo) */
+function decontaminateWhite(canvas) {
+  const ctx = canvas.getContext("2d");
+  const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const d = id.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const a = d[i + 3];
+    if (a === 0 || a === 255) continue;
+    const al = a / 255;
+    for (let c = 0; c < 3; c++) {
+      const v = (d[i + c] - 255 * (1 - al)) / al;
+      d[i + c] = Math.max(0, Math.min(255, Math.round(v)));
+    }
+  }
+  ctx.putImageData(id, 0, 0);
+  return canvas;
 }
 function fitCanvas(src, maxW, maxH) {
   const s = Math.min(maxW / src.width, maxH / src.height);
@@ -708,13 +726,27 @@ function buildPoses(cols, useRim = true) {
     }
     for (let p = 0; p < w2 * h2; p++) if (solid[p] && !keep.has(lr.lab[p])) data[p * 4 + 3] = 0;
     ctx.putImageData(id, 0, 0);
+    decontaminateWhite(c);
+    // remember where the figure sits inside its slice, so frames can be
+    // placed by slice geometry (sheet alignment) instead of per-pose bbox
+    let aMinX = w2, aMinY = h2, aMaxX = -1, aMaxY = -1;
+    for (let p = 0; p < w2 * h2; p++) {
+      if (data[p * 4 + 3] > 10) {
+        const px = p % w2, py = (p / w2) | 0;
+        if (px < aMinX) aMinX = px; if (px > aMaxX) aMaxX = px;
+        if (py < aMinY) aMinY = py; if (py > aMaxY) aMaxY = py;
+      }
+    }
     let trimmed = trimCanvas(c);
+    trimmed._anchor = aMaxX >= 0 ? { dx: aMinX, dy: aMinY, sw: c.width, sh: c.height } : { dx: 0, dy: 0, sw: c.width, sh: c.height };
     if (useRim) {
       const tctx = trimmed.getContext("2d");
       let tid = tctx.getImageData(0, 0, trimmed.width, trimmed.height);
       tid = stripRim(tid);
       tctx.putImageData(tid, 0, 0);
+      const keepAnchor = trimmed._anchor;
       trimmed = trimCanvas(trimmed);
+      trimmed._anchor = keepAnchor;
     }
     poses.push(trimmed);
     log("ポーズ" + (i + 1) + ": " + trimmed.width + "×" + trimmed.height);
@@ -839,6 +871,7 @@ function composeAnim(poses, mode) {
   if (place === "top") { ground = Math.round(M.h * 0.99); heightCap = 0.76; }
   else if (place === "left") { ground = Math.round(M.h * 0.985); heightCap = 0.95; charCx = Math.round(M.w * 0.585); }
   else { ground = Math.round(M.h * 0.985); heightCap = 0.95; }
+  const anchors = poses.map(p => p._anchor || { dx: 0, dy: 0, sw: p.width, sh: p.height });
   const maxPoseH = Math.max(...poses.map(p => p.height));
   const maxPoseW = Math.max(...poses.map(p => p.width));
   let scale = Math.min((M.h * heightCap * big) / maxPoseH, (M.w * 0.96) / maxPoseW);
