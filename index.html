@@ -22,7 +22,7 @@
 </style>
 </head>
 <body>
-<h1>🎀 スタンプ職人（Oz専用 v1.9.6）</h1>
+<h1>🎀 スタンプ職人（Oz専用 v1.9.7）</h1>
 <p class="small">シート／単体イラスト（文字なし）を読み込むと、切り分け → ふちなし透過 → 仕上げ → 書き出しまで自動。常時「高品質モード」：LINE仕様の上限いっぱいまで色数・解像度を自動で最大化します。</p>
 
 <div class="row">
@@ -806,6 +806,32 @@ function buildPoses(cols, useRim = true) {
       if (k === big || sizes[k] < Math.max(150, sizes[big] * 0.02)) continue;
       const cx = sumX[k] / sizes[k];
       if (cx >= colL - 4 && cx <= colR + 4) keep.add(k);
+    }
+    // prune kept fragments that float far from the main component: a real
+    // detached part (ear, accessory) hugs the body, neighbour debris does not
+    if (keep.size > 1) {
+      const dist = new Int32Array(w2 * h2).fill(-1);
+      const queue = new Int32Array(w2 * h2);
+      let qh = 0, qt = 0;
+      for (let p = 0; p < w2 * h2; p++) if (lr.lab[p] === big) { dist[p] = 0; queue[qt++] = p; }
+      while (qh < qt) {
+        const p = queue[qh++], d = dist[p];
+        if (d >= 10) continue;
+        const px = p % w2, py = (p / w2) | 0;
+        if (px > 0 && dist[p - 1] < 0) { dist[p - 1] = d + 1; queue[qt++] = p - 1; }
+        if (px < w2 - 1 && dist[p + 1] < 0) { dist[p + 1] = d + 1; queue[qt++] = p + 1; }
+        if (py > 0 && dist[p - w2] < 0) { dist[p - w2] = d + 1; queue[qt++] = p - w2; }
+        if (py < h2 - 1 && dist[p + w2] < 0) { dist[p + w2] = d + 1; queue[qt++] = p + w2; }
+      }
+      const minD = new Map();
+      for (let p = 0; p < w2 * h2; p++) {
+        const k = lr.lab[p];
+        if (k !== big && keep.has(k)) {
+          const d = dist[p] < 0 ? 999 : dist[p];
+          if (!minD.has(k) || d < minD.get(k)) minD.set(k, d);
+        }
+      }
+      for (const [k, d] of minD) if (d > 10) keep.delete(k);
     }
     for (let p = 0; p < w2 * h2; p++) if (solid[p] && !keep.has(lr.lab[p])) data[p * 4 + 3] = 0;
     // auto-detected cells partition the sheet: nothing outside the figure's
