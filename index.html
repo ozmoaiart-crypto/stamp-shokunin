@@ -22,7 +22,7 @@
 </style>
 </head>
 <body>
-<h1>🎀 スタンプ職人（Oz専用 v1.4）</h1>
+<h1>🎀 スタンプ職人（Oz専用 v1.4.1）</h1>
 <p class="small">シート／単体イラスト（文字なし）を読み込むと、切り分け → ふちなし透過 → 仕上げ → 書き出しまで自動。常時「高品質モード」：LINE仕様の上限いっぱいまで色数・解像度を自動で最大化します。</p>
 
 <div class="row">
@@ -64,6 +64,8 @@
     <option value="mint">ミント</option>
     <option value="lavender">ラベンダー</option>
   </select>
+  <label>文字の大きさ</label>
+  <select id="textSize"><option value="62">大</option><option value="53" selected>中</option><option value="45">小</option></select>
   <label>文字位置（静止）</label>
   <select id="textPos">
     <option value="bottom" selected>下</option>
@@ -494,7 +496,8 @@ function drawTextFrame(ctx, text, colorKey, frameIdx, totalFrames, tsBounce, W, 
   if (!text) return;
   const place = ($("textPlace") || {}).value || "bottom";
   const anim = ($("textAnim") || {}).value || "bounce";
-  const fontPx = Math.round((place === "top" ? 56 : 62) * sRatio);
+  const basePx = parseInt(($("textSize") || {}).value || "53", 10);
+  const fontPx = Math.round((place === "top" ? basePx - 6 : basePx) * sRatio);
   const letters = [...text];
   let alpha = 1;
   if (anim === "fade") alpha = Math.min(1, (frameIdx + 1) / Math.max(2, Math.round(totalFrames * 0.4)));
@@ -910,7 +913,7 @@ function currentRecipe() {
            plays: $("plays").value, tempo: ($("tempo") || {}).value || "1", sparkle: $("sparkle").checked,
            textPlace: ($("textPlace") || {}).value || "bottom", textAnim: ($("textAnim") || {}).value || "bounce",
            timing: ($("timing") || {}).value || "ease", charSize: ($("charSize") || {}).value || "std",
-           idle: ($("idle") || {}).value || "off" };
+           idle: ($("idle") || {}).value || "off", textSize: ($("textSize") || {}).value || "53" };
 }
 $("copyRecipe").addEventListener("click", () => { $("recipe").value = JSON.stringify(currentRecipe()); });
 $("loadRecipe").addEventListener("click", () => {
@@ -929,6 +932,7 @@ $("loadRecipe").addEventListener("click", () => {
     if (r.timing && $("timing")) $("timing").value = r.timing;
     if (r.charSize && $("charSize")) $("charSize").value = r.charSize;
     if (r.idle && $("idle")) $("idle").value = r.idle;
+    if (r.textSize && $("textSize")) $("textSize").value = r.textSize;
     if (r.sparkle !== undefined) $("sparkle").checked = !!r.sparkle;
     log("レシピを読み込みました。「作る」を押してください。");
   } catch (e) { log("レシピの形式が違います"); }
