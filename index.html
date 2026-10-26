@@ -22,7 +22,7 @@
 </style>
 </head>
 <body>
-<h1>🎀 スタンプ職人（Oz専用 v1.3）</h1>
+<h1>🎀 スタンプ職人（Oz専用 v1.3.1）</h1>
 <p class="small">シート／単体イラスト（文字なし）を読み込むと、切り分け → ふちなし透過 → 仕上げ → 書き出しまで自動。常時「高品質モード」：LINE仕様の上限いっぱいまで色数・解像度を自動で最大化します。</p>
 
 <div class="row">
@@ -599,6 +599,32 @@ function buildGIFBlob(frames, durations) {
   return new Blob([new Uint8Array(out)], { type: "image/gif" });
 }
 
+
+/* ---------- background-colour flood (v1.3.1: cream-bg sheets) ---------- */
+function clearByBgColor(imgData) {
+  const { data, width: w, height: h } = imgData;
+  const corners = [[0, 0], [w - 16, 0], [0, h - 16], [w - 16, h - 16]];
+  let sr = 0, sg = 0, sb = 0, n = 0;
+  for (const [cx, cy] of corners) for (let y = cy; y < cy + 16; y++) for (let x = cx; x < cx + 16; x++) {
+    const o = (y * w + x) * 4;
+    sr += data[o]; sg += data[o + 1]; sb += data[o + 2]; n++;
+  }
+  if (!n) return imgData;
+  const br = sr / n, bg = sg / n, bb = sb / n, TOL = 30;
+  const isBg = p => { const o = p * 4; return data[o + 3] === 0 || (Math.abs(data[o] - br) <= TOL && Math.abs(data[o + 1] - bg) <= TOL && Math.abs(data[o + 2] - bb) <= TOL); };
+  const seen = new Uint8Array(w * h), stack = [];
+  const pushIf = p => { if (!seen[p] && isBg(p)) { seen[p] = 1; stack.push(p); } };
+  for (let x = 0; x < w; x++) { pushIf(x); pushIf((h - 1) * w + x); }
+  for (let y = 0; y < h; y++) { pushIf(y * w); pushIf(y * w + w - 1); }
+  while (stack.length) {
+    const p = stack.pop(); data[p * 4 + 3] = 0;
+    const x = p % w, y = Math.floor(p / w);
+    if (x > 0) pushIf(p - 1); if (x < w - 1) pushIf(p + 1);
+    if (y > 0) pushIf(p - w); if (y < h - 1) pushIf(p + w);
+  }
+  return imgData;
+}
+
 /* ---------- pose building (shared by all modes) ---------- */
 function buildPoses(cols) {
   const sw = sheetImg.width, sh = sheetImg.height, pw = Math.floor(sw / cols);
@@ -611,6 +637,7 @@ function buildPoses(cols) {
     ctx.drawImage(sheetImg, i * pw, 0, c.width, sh, 0, 0, c.width, sh);
     let id = ctx.getImageData(0, 0, c.width, sh);
     id = removeBg(id);
+    id = clearByBgColor(id);
     const { data, width: w2, height: h2 } = id;
     const solid = new Uint8Array(w2 * h2);
     for (let p = 0; p < w2 * h2; p++) solid[p] = data[p * 4 + 3] > 10 ? 1 : 0;
