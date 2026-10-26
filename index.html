@@ -22,7 +22,7 @@
 </style>
 </head>
 <body>
-<h1>🎀 スタンプ職人（Oz専用 v1.8）</h1>
+<h1>🎀 スタンプ職人（Oz専用 v1.8.1）</h1>
 <p class="small">シート／単体イラスト（文字なし）を読み込むと、切り分け → ふちなし透過 → 仕上げ → 書き出しまで自動。常時「高品質モード」：LINE仕様の上限いっぱいまで色数・解像度を自動で最大化します。</p>
 
 <div class="row">
@@ -610,7 +610,7 @@ function buildGIFBlob(frames, durations) {
 
 
 /* ---------- background-colour flood (v1.3.1: cream-bg sheets) ---------- */
-function clearByBgColor(imgData) {
+function clearByBgColor(imgData, tol = 30) {
   const { data, width: w, height: h } = imgData;
   const corners = [[0, 0], [w - 16, 0], [0, h - 16], [w - 16, h - 16]];
   let sr = 0, sg = 0, sb = 0, n = 0;
@@ -658,6 +658,22 @@ function vividCanvas(src, satMul = 1.28, conMul = 1.05) {
 
 function buildPoses(cols, useRim = true) {
   const sw = sheetImg.width, sh = sheetImg.height, pw = Math.floor(sw / cols);
+  // near-white sheet background: removeBg alone is correct; the colour flood
+  // would eat white costume parts (headdress, apron) that touch the bg
+  let bgNearWhite = false;
+  {
+    const probe = document.createElement("canvas");
+    probe.width = sw; probe.height = sh;
+    const pctx = probe.getContext("2d");
+    pctx.drawImage(sheetImg, 0, 0);
+    const pd = pctx.getImageData(0, 0, sw, sh).data;
+    let rS = 0, gS = 0, bS = 0, cnt = 0;
+    for (const [cx, cy] of [[4, 4], [sw - 5, 4], [4, sh - 5], [sw - 5, sh - 5]]) {
+      const i = (cy * sw + cx) * 4;
+      rS += pd[i]; gS += pd[i + 1]; bS += pd[i + 2]; cnt++;
+    }
+    bgNearWhite = (rS / cnt >= 245 && gS / cnt >= 245 && bS / cnt >= 245);
+  }
   const mx = Math.round(pw * 0.12);
   const poses = [];
   for (let i = 0; i < cols; i++) {
@@ -669,7 +685,7 @@ function buildPoses(cols, useRim = true) {
     ctx.drawImage(sheetImg, x0, 0, c.width, sh, 0, 0, c.width, sh);
     let id = ctx.getImageData(0, 0, c.width, sh);
     id = removeBg(id);
-    id = clearByBgColor(id);
+    if (!bgNearWhite) id = clearByBgColor(id, 20);
     const { data, width: w2, height: h2 } = id;
     const solid = new Uint8Array(w2 * h2);
     for (let p = 0; p < w2 * h2; p++) solid[p] = data[p * 4 + 3] > 10 ? 1 : 0;
