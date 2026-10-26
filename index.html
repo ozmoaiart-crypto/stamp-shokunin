@@ -22,7 +22,7 @@
 </style>
 </head>
 <body>
-<h1>🎀 スタンプ職人（Oz専用 v2.1）</h1>
+<h1>🎀 スタンプ職人（Oz専用 v2.1.1）</h1>
 <p class="small">シート／単体イラスト（文字なし）を読み込むと、切り分け → ふちなし透過 → 仕上げ → 書き出しまで自動。常時「高品質モード」：LINE仕様の上限いっぱいまで色数・解像度を自動で最大化します。</p>
 
 <div class="row">
@@ -582,8 +582,9 @@ function drawTextFrame(ctx, text, colorKey, frameIdx, totalFrames, tsBounce, W, 
   let reveal = letters.length;
   if (anim === "seq") reveal = Math.max(1, Math.min(letters.length, Math.floor((frameIdx + 1) / totalFrames * (letters.length + 1))));
   if (anim === "type") {
-    const done = Math.ceil(letters.length * Math.min(1, (frameIdx + 1) / Math.max(1, totalFrames) / 0.8));
-    reveal = Math.max(1, Math.min(letters.length, done));
+    // blank start, then one letter at a time; the word completes on the
+    // final frame (Oz spec: 空欄→あ→あり→ありが→ありがとう)
+    reveal = Math.min(letters.length, Math.floor((letters.length + 1) * frameIdx / Math.max(1, totalFrames)));
   }
   if (place === "left") {
     const x = W * 0.095;
