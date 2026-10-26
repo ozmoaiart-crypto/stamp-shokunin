@@ -22,7 +22,7 @@
 </style>
 </head>
 <body>
-<h1>🎀 スタンプ職人（Oz専用 v1.1）</h1>
+<h1>🎀 スタンプ職人（Oz専用 v1.2）</h1>
 <p class="small">シート／単体イラスト（文字なし）を読み込むと、切り分け → ふちなし透過 → 仕上げ → 書き出しまで自動。常時「高品質モード」：LINE仕様の上限いっぱいまで色数・解像度を自動で最大化します。</p>
 
 <div class="row">
@@ -71,7 +71,9 @@
 </div>
 <div class="row">
   <label>再生</label>
-  <select id="plays"><option value="2" selected>1秒 × 2回</option><option value="1">1秒 × 1回</option></select>
+  <select id="plays"><option value="2" selected>× 2回</option><option value="1">× 1回</option></select>
+  <label>テンポ</label>
+  <select id="tempo"><option value="1" selected>1秒（速）</option><option value="2">2秒（ゆっくり・見せ場）</option></select>
   <label><input type="checkbox" id="sparkle" checked> キラキラ</label>
   <label><input type="checkbox" id="dither" checked> ディザ</label>
 </div>
@@ -518,7 +520,7 @@ function composeAnim(poses, mode) {
     ctx.drawImage(img, x, y, img.width, hgt);
     if (useSparkle) drawSparkles(ctx, frames.length, 0, 0, sRatio);
     if (text) drawTextAt(ctx, text, colorKey, M.w / 2, Math.round(M.h * 0.845), Math.round(62 * ts * sRatio));
-    frames.push(c); durations.push(dur);
+    frames.push(c); durations.push(dur * (parseInt(($("tempo") || {}).value || "1", 10)));
   };
   if (T) {
     T.seq.forEach(([pi, dur, lift, sy], i) => pushFrame(pi, dur, lift, sy, T.ts[i] || 1.0));
@@ -691,7 +693,7 @@ $("dlExtra2").addEventListener("click", async () => {
 function currentRecipe() {
   return { mode: $("mode").value, cols: $("cols").value, pose: $("poseSel").value,
            text: $("text").value, color: $("color").value, textPos: $("textPos").value,
-           plays: $("plays").value, sparkle: $("sparkle").checked };
+           plays: $("plays").value, tempo: ($("tempo") || {}).value || "1", sparkle: $("sparkle").checked };
 }
 $("copyRecipe").addEventListener("click", () => { $("recipe").value = JSON.stringify(currentRecipe()); });
 $("loadRecipe").addEventListener("click", () => {
@@ -704,6 +706,7 @@ $("loadRecipe").addEventListener("click", () => {
     if (r.color) $("color").value = r.color;
     if (r.textPos) $("textPos").value = r.textPos;
     if (r.plays) $("plays").value = r.plays;
+    if (r.tempo && $("tempo")) $("tempo").value = r.tempo;
     if (r.sparkle !== undefined) $("sparkle").checked = !!r.sparkle;
     log("レシピを読み込みました。「作る」を押してください。");
   } catch (e) { log("レシピの形式が違います"); }
