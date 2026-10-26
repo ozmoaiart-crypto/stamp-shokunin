@@ -22,7 +22,7 @@
 </style>
 </head>
 <body>
-<h1>🎀 スタンプ職人（Oz専用 v1.2）</h1>
+<h1>🎀 スタンプ職人（Oz専用 v1.3）</h1>
 <p class="small">シート／単体イラスト（文字なし）を読み込むと、切り分け → ふちなし透過 → 仕上げ → 書き出しまで自動。常時「高品質モード」：LINE仕様の上限いっぱいまで色数・解像度を自動で最大化します。</p>
 
 <div class="row">
@@ -44,6 +44,8 @@
     <option value="1">1（単体）</option>
     <option value="3">3</option>
     <option value="5" selected>5</option>
+    <option value="7">7</option>
+    <option value="8">8</option>
   </select>
   <label>使うポーズ</label>
   <select id="poseSel">
@@ -74,6 +76,14 @@
   <select id="plays"><option value="2" selected>× 2回</option><option value="1">× 1回</option></select>
   <label>テンポ</label>
   <select id="tempo"><option value="1" selected>1秒（速）</option><option value="2">2秒（ゆっくり・見せ場）</option></select>
+  <label>文字配置（動く）</label>
+  <select id="textPlace"><option value="bottom" selected>下</option><option value="top">上</option><option value="left">左・縦書き</option></select>
+  <label>文字アニメ</label>
+  <select id="textAnim"><option value="bounce" selected>全体バウンス</option><option value="seq">1文字ずつ出現</option><option value="fade">フェード</option><option value="fixed">固定</option></select>
+  <label>刻み</label>
+  <select id="timing"><option value="ease" selected>緩急</option><option value="uniform">均等（ヌルヌル）</option></select>
+  <label>キャラ</label>
+  <select id="charSize"><option value="std" selected>標準</option><option value="big">大きめ</option></select>
   <label><input type="checkbox" id="sparkle" checked> キラキラ</label>
   <label><input type="checkbox" id="dither" checked> ディザ</label>
 </div>
@@ -82,6 +92,7 @@
   <button id="dlMain2" class="sub" disabled>本体を保存</button>
   <button id="dlExtra1" class="sub" disabled>メイン画像を保存</button>
   <button id="dlExtra2" class="sub" disabled>タブ画像を保存</button>
+  <button id="dlPreview" class="sub" disabled>プレビューGIFを保存</button>
 </div>
 <div class="row"><canvas id="preview" width="320" height="270"></canvas></div>
 <div class="row" id="log"></div>
@@ -458,6 +469,136 @@ function drawTextAt(ctx, text, colorKey, cx, cy, fontPx) {
   ctx.fillStyle = fill; ctx.fillText(text, cx, cy);
 }
 
+
+/* ---------- text with placement & animation (v1.3) ---------- */
+function drawPuffy(ctx, ch, colorKey, x, y, fontPx, scaleF, alpha) {
+  const col = COLORS[colorKey] || COLORS.pink;
+  const fill = `rgb(${col.fill[0]},${col.fill[1]},${col.fill[2]})`;
+  const dark = `rgb(${col.dark[0]},${col.dark[1]},${col.dark[2]})`;
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+  ctx.translate(x, y); ctx.scale(scaleF, scaleF); ctx.translate(-x, -y);
+  ctx.font = `800 ${fontPx}px "M PLUS Rounded 1c","Hiragino Maru Gothic ProN",sans-serif`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineJoin = "round";
+  const s = fontPx / 62;
+  ctx.strokeStyle = "#ffffff"; ctx.lineWidth = Math.max(2, Math.round(15 * s));
+  ctx.strokeText(ch, x, y); ctx.fillStyle = "#ffffff"; ctx.fillText(ch, x, y);
+  ctx.strokeStyle = dark; ctx.lineWidth = Math.max(1, Math.round(6 * s));
+  ctx.strokeText(ch, x, y);
+  ctx.fillStyle = fill; ctx.fillText(ch, x, y);
+  ctx.restore();
+}
+function drawTextFrame(ctx, text, colorKey, frameIdx, totalFrames, tsBounce, W, H, sRatio) {
+  if (!text) return;
+  const place = ($("textPlace") || {}).value || "bottom";
+  const anim = ($("textAnim") || {}).value || "bounce";
+  const fontPx = Math.round((place === "top" ? 56 : 62) * sRatio);
+  const letters = [...text];
+  let alpha = 1;
+  if (anim === "fade") alpha = Math.min(1, (frameIdx + 1) / Math.max(2, Math.round(totalFrames * 0.4)));
+  let reveal = letters.length;
+  if (anim === "seq") reveal = Math.max(1, Math.min(letters.length, Math.floor((frameIdx + 1) / totalFrames * (letters.length + 1))));
+  if (place === "left") {
+    const x = W * 0.095;
+    const step = fontPx * 1.04;
+    const y0 = H * 0.46 - step * (letters.length - 1) / 2;
+    letters.forEach((ch, i) => {
+      if (i >= reveal) return;
+      const pop = (anim === "seq" && i === reveal - 1 && frameIdx < totalFrames - 1) ? 1.15 : 1.0;
+      drawPuffy(ctx, ch, colorKey, x, y0 + step * i, fontPx, pop, alpha);
+    });
+    return;
+  }
+  const cy = place === "top" ? H * 0.16 : H * 0.845;
+  if (anim === "seq") {
+    ctx.font = `800 ${fontPx}px "M PLUS Rounded 1c","Hiragino Maru Gothic ProN",sans-serif`;
+    const widths = letters.map(ch => ctx.measureText(ch).width);
+    const total = widths.reduce((a, b) => a + b, 0);
+    let x = W / 2 - total / 2;
+    letters.forEach((ch, i) => {
+      const cx = x + widths[i] / 2; x += widths[i];
+      if (i >= reveal) return;
+      const pop = (i === reveal - 1 && frameIdx < totalFrames - 1) ? 1.15 : 1.0;
+      drawPuffy(ctx, ch, colorKey, cx, cy, fontPx, pop, alpha);
+    });
+  } else {
+    ctx.save(); ctx.globalAlpha = alpha;
+    drawTextAt(ctx, text, colorKey, W / 2, cy, Math.round(fontPx * (anim === "bounce" ? tsBounce : 1.0)));
+    ctx.restore();
+  }
+}
+
+/* ---------- GIF writer (preview, v1.3) ---------- */
+function lzwEncode(indices, minCode) {
+  const clear = 1 << minCode, eoi = clear + 1;
+  let dict = new Map(), next = eoi + 1, codeSize = minCode + 1;
+  const bytes = [];
+  let bitBuf = 0, bitCnt = 0;
+  const emit = code => {
+    bitBuf += code * Math.pow(2, bitCnt); bitCnt += codeSize;
+    while (bitCnt >= 8) { bytes.push(bitBuf % 256); bitBuf = Math.floor(bitBuf / 256); bitCnt -= 8; }
+  };
+  emit(clear);
+  let prefix = indices[0];
+  for (let i = 1; i < indices.length; i++) {
+    const k = indices[i];
+    const kk = prefix * 4096 + k;
+    if (dict.has(kk)) { prefix = dict.get(kk); continue; }
+    emit(prefix);
+    if (next < 4096) {
+      dict.set(kk, next++);
+      if (next - 1 === Math.pow(2, codeSize) && codeSize < 12) codeSize++;
+    } else { emit(clear); dict = new Map(); next = eoi + 1; codeSize = minCode + 1; }
+    prefix = k;
+  }
+  emit(prefix); emit(eoi);
+  if (bitCnt > 0) bytes.push(bitBuf % 256);
+  const out = [minCode];
+  for (let i = 0; i < bytes.length; i += 255) { const blk = bytes.slice(i, i + 255); out.push(blk.length, ...blk); }
+  out.push(0);
+  return out;
+}
+function buildGIFBlob(frames, durations) {
+  const W = frames[0].width, H = frames[0].height;
+  const comp = frames.map((f, i) => {
+    const c = document.createElement("canvas"); c.width = W; c.height = H;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = i % 2 ? "rgb(220,229,239)" : "rgb(217,226,236)";
+    ctx.fillRect(0, 0, W, H); ctx.drawImage(f, 0, 0);
+    return c;
+  });
+  const ids = comp.map(c => c.getContext("2d").getImageData(0, 0, W, H));
+  const palette = buildPalette(ids, 256);
+  while (palette.length < 256) palette.push([0, 0, 0]);
+  const cache = new Map();
+  const nearestIdx = (r, g, b) => {
+    const key = (r << 16) | (g << 8) | b;
+    let v = cache.get(key);
+    if (v !== undefined) return v;
+    let bd = 1e18; v = 0;
+    palette.forEach((p, i) => { const dr = r - p[0], dg = g - p[1], db = b - p[2]; const d = dr * dr + dg * dg + db * db; if (d < bd) { bd = d; v = i; } });
+    cache.set(key, v); return v;
+  };
+  const out = [];
+  const push = (...bs) => { for (const b of bs) out.push(b); };
+  const pushStr = t => { for (let i = 0; i < t.length; i++) out.push(t.charCodeAt(i)); };
+  pushStr("GIF89a");
+  push(W % 256, Math.floor(W / 256), H % 256, Math.floor(H / 256), 0xF7, 0, 0);
+  for (const p of palette) push(p[0], p[1], p[2]);
+  push(0x21, 0xFF, 11); pushStr("NETSCAPE2.0"); push(3, 1, 0, 0, 0);
+  frames.forEach((f, fi) => {
+    const id = ids[fi], d = id.data;
+    const idx = new Uint8Array(W * H);
+    for (let p = 0; p < W * H; p++) idx[p] = nearestIdx(d[p * 4], d[p * 4 + 1], d[p * 4 + 2]);
+    const delay = Math.max(2, Math.round((durations[fi] || 100) / 10));
+    push(0x21, 0xF9, 4, 0x08, delay % 256, Math.floor(delay / 256), 0, 0);
+    push(0x2C, 0, 0, 0, 0, W % 256, Math.floor(W / 256), H % 256, Math.floor(H / 256), 0);
+    push(...lzwEncode(idx, 8));
+  });
+  push(0x3B);
+  return new Blob([new Uint8Array(out)], { type: "image/gif" });
+}
+
 /* ---------- pose building (shared by all modes) ---------- */
 function buildPoses(cols) {
   const sw = sheetImg.width, sh = sheetImg.height, pw = Math.floor(sw / cols);
@@ -497,16 +638,22 @@ function composeAnim(poses, mode) {
   const text = $("text").value || "";
   const colorKey = $("color").value;
   const useSparkle = $("sparkle").checked;
+  const place = ($("textPlace") || {}).value || "bottom";
+  const timingMode = ($("timing") || {}).value || "ease";
+  const big = (($("charSize") || {}).value || "std") === "big" ? 1.16 : 1.0;
+  const tempoMul = parseInt(($("tempo") || {}).value || "1", 10);
+  let ground, stageRatio, charCx = M.w / 2;
+  if (place === "top") { ground = Math.round(M.h * 0.99); stageRatio = 0.74; }
+  else if (place === "left") { ground = Math.round(M.h * 0.97); stageRatio = 0.80; charCx = Math.round(M.w * 0.585); }
+  else { ground = Math.round(M.h * 0.66); stageRatio = 0.62; }
   const maxPoseH = Math.max(...poses.map(p => p.height));
-  const stageH = M.h * 0.62; // character zone height
-  const scale = stageH / maxPoseH;
+  const scale = (M.h * stageRatio * big) / maxPoseH;
   const scaled = poses.map(p => {
     const c = document.createElement("canvas");
     c.width = Math.round(p.width * scale); c.height = Math.round(p.height * scale);
     c.getContext("2d").drawImage(p, 0, 0, c.width, c.height);
     return c;
   });
-  const ground = Math.round(M.h * 0.66);
   const sRatio = M.w / 320;
   const frames = [], durations = [];
   const pushFrame = (poseIdx, dur, lift, sy, ts) => {
@@ -515,20 +662,33 @@ function composeAnim(poses, mode) {
     const ctx = c.getContext("2d");
     const img = scaled[poseIdx];
     const hgt = Math.round(img.height * sy);
-    const x = Math.round((M.w - img.width) / 2);
+    const x = Math.round(charCx - img.width / 2);
     const y = ground - hgt + Math.round(lift * sRatio);
     ctx.drawImage(img, x, y, img.width, hgt);
-    if (useSparkle) drawSparkles(ctx, frames.length, 0, 0, sRatio);
-    if (text) drawTextAt(ctx, text, colorKey, M.w / 2, Math.round(M.h * 0.845), Math.round(62 * ts * sRatio));
-    frames.push(c); durations.push(dur * (parseInt(($("tempo") || {}).value || "1", 10)));
+    if (useSparkle) drawSparkles(ctx, frames.length, place === "left" ? 40 : 0, 0, sRatio);
+    drawTextFrame(ctx, text, colorKey, frames.length, TOTAL_FRAMES, ts, M.w, M.h, sRatio);
+    frames.push(c); durations.push(dur);
   };
-  if (T) {
-    T.seq.forEach(([pi, dur, lift, sy], i) => pushFrame(pi, dur, lift, sy, T.ts[i] || 1.0));
+  let TOTAL_FRAMES = 0;
+  if (timingMode === "uniform") {
+    // pose cuts x2 (plain + settle) at uniform durations: small-step sheets read nurunuru
+    const seqU = [];
+    poses.forEach((_, i) => { seqU.push([i, 1.0, 0]); seqU.push([i, 0.985, 1]); });
+    TOTAL_FRAMES = seqU.length;
+    const total = 1000 * tempoMul;
+    const per = Math.floor(total / TOTAL_FRAMES / 10) * 10;
+    seqU.forEach(([pi, sy, lift], i) => {
+      const dur = i === TOTAL_FRAMES - 1 ? total - per * (TOTAL_FRAMES - 1) : per;
+      pushFrame(pi, dur, lift, sy, 1.0);
+    });
+  } else if (T) {
+    TOTAL_FRAMES = T.seq.length;
+    T.seq.forEach(([pi, dur, lift, sy], i) => pushFrame(pi, dur * tempoMul, lift, sy, T.ts[i] || 1.0));
   } else {
-    // generic cycle for other pose counts
     const order = poses.map((_, i) => i).concat(poses.map((_, i) => poses.length - 1 - i));
+    TOTAL_FRAMES = order.length;
     const per = Math.floor(1000 / order.length);
-    order.forEach((pi, i) => pushFrame(pi, i === order.length - 1 ? 1000 - per * (order.length - 1) : per, 0, 1.0, 1.0));
+    order.forEach((pi, i) => pushFrame(pi, (i === order.length - 1 ? 1000 - per * (order.length - 1) : per) * tempoMul, 0, 1.0, 1.0));
   }
   return { frames, durations };
 }
@@ -615,6 +775,7 @@ $("build").addEventListener("click", async () => {
     log("静止画: " + still.width + "×" + still.height);
   }
   $("dlMain2").disabled = false; $("dlExtra1").disabled = false; $("dlExtra2").disabled = false;
+  $("dlPreview").disabled = !(built && built.kind === "anim");
   log("完成しました。下のボタンから保存できます。");
 });
 
@@ -684,6 +845,12 @@ $("dlExtra1").addEventListener("click", async () => {
     download(blob, "main.png");
   }
 });
+$("dlPreview").addEventListener("click", () => {
+  if (!built || built.kind !== "anim") return;
+  const blob = buildGIFBlob(built.frames, built.durations);
+  download(blob, "preview.gif");
+  log("プレビューGIF: " + Math.round(blob.size / 1024) + "KB");
+});
 $("dlExtra2").addEventListener("click", async () => {
   if (!built) return;
   built.tabCanvas.toBlob(b => download(b, "tab.png"), "image/png");
@@ -693,7 +860,9 @@ $("dlExtra2").addEventListener("click", async () => {
 function currentRecipe() {
   return { mode: $("mode").value, cols: $("cols").value, pose: $("poseSel").value,
            text: $("text").value, color: $("color").value, textPos: $("textPos").value,
-           plays: $("plays").value, tempo: ($("tempo") || {}).value || "1", sparkle: $("sparkle").checked };
+           plays: $("plays").value, tempo: ($("tempo") || {}).value || "1", sparkle: $("sparkle").checked,
+           textPlace: ($("textPlace") || {}).value || "bottom", textAnim: ($("textAnim") || {}).value || "bounce",
+           timing: ($("timing") || {}).value || "ease", charSize: ($("charSize") || {}).value || "std" };
 }
 $("copyRecipe").addEventListener("click", () => { $("recipe").value = JSON.stringify(currentRecipe()); });
 $("loadRecipe").addEventListener("click", () => {
@@ -707,6 +876,10 @@ $("loadRecipe").addEventListener("click", () => {
     if (r.textPos) $("textPos").value = r.textPos;
     if (r.plays) $("plays").value = r.plays;
     if (r.tempo && $("tempo")) $("tempo").value = r.tempo;
+    if (r.textPlace && $("textPlace")) $("textPlace").value = r.textPlace;
+    if (r.textAnim && $("textAnim")) $("textAnim").value = r.textAnim;
+    if (r.timing && $("timing")) $("timing").value = r.timing;
+    if (r.charSize && $("charSize")) $("charSize").value = r.charSize;
     if (r.sparkle !== undefined) $("sparkle").checked = !!r.sparkle;
     log("レシピを読み込みました。「作る」を押してください。");
   } catch (e) { log("レシピの形式が違います"); }
