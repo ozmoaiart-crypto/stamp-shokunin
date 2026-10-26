@@ -22,7 +22,7 @@
 </style>
 </head>
 <body>
-<h1>🎀 スタンプ職人（Oz専用 v1.9.1）</h1>
+<h1>🎀 スタンプ職人（Oz専用 v1.9.3）</h1>
 <p class="small">シート／単体イラスト（文字なし）を読み込むと、切り分け → ふちなし透過 → 仕上げ → 書き出しまで自動。常時「高品質モード」：LINE仕様の上限いっぱいまで色数・解像度を自動で最大化します。</p>
 
 <div class="row">
@@ -47,6 +47,8 @@
     <option value="7">7</option>
     <option value="8">8</option>
   </select>
+  <label>切り方</label>
+  <select id="cutMode"><option value="auto" selected>自動検出（谷で切る）</option><option value="equal">等分</option></select>
   <label>使うポーズ</label>
   <select id="poseSel">
     <option value="0">1</option><option value="1">2</option><option value="2" selected>3</option>
@@ -86,6 +88,12 @@
   <select id="timing"><option value="ease" selected>緩急</option><option value="uniform">均等（ヌルヌル）</option><option value="hold">ホールド（往復＋溜め）</option></select>
   <label>1枚絵モーション</label>
   <select id="preset"><option value="none" selected>なし（シートのポーズを使う）</option><option value="bow">ぺこり（おじぎ×2）</option><option value="deepbow">深ぺこり</option><option value="nod">うんうん</option><option value="sway">ゆらゆら</option><option value="rock">ノリノリ</option><option value="hop">ぴょんぴょん</option><option value="heartbeat">ドキドキ</option><option value="float">ふわふわ</option><option value="pop">ポンッと登場</option></select>
+  <label>配置基準（動く）</label>
+  <select id="anchor"><option value="feet" selected>足元（ズレ防止）</option><option value="bbox">外枠の中心</option></select>
+  <label>下半身固定</label>
+  <select id="lockLower"><option value="off" selected>なし</option><option value="on">あり（ドナーの下半身で統一）</option></select>
+  <label>下半身ドナー</label>
+  <select id="lockDonor"><option value="0" selected>ポーズ1</option><option value="1">ポーズ2</option><option value="2">ポーズ3</option><option value="3">ポーズ4</option><option value="4">ポーズ5</option></select>
   <label>キャラ</label>
   <select id="charSize"><option value="std" selected>標準</option><option value="big">大きめ</option></select>
   <label>アイドル層</label>
@@ -676,6 +684,69 @@ function vividCanvas(src, satMul = 1.28, conMul = 1.05) {
   return c;
 }
 
+/* Detect figure cells on the sheet: column ink profile -> figure groups at
+   clean gaps; touching figures are split at the profile valley between them.
+   Trusts the detected count when clean groups outnumber the cols setting
+   (a sheet may hold MORE poses than the prompt asked for). Returns
+   [{x, w}] in sheet coordinates, or null when nothing is detectable. */
+function detectCells(cols) {
+  const sw = sheetImg.width, sh = sheetImg.height;
+  const probe = document.createElement("canvas");
+  probe.width = sw; probe.height = sh;
+  const pctx = probe.getContext("2d", { willReadFrequently: true });
+  pctx.drawImage(sheetImg, 0, 0);
+  const pd = pctx.getImageData(0, 0, sw, sh).data;
+  let br = 0, bg2 = 0, bb = 0, cnt = 0;
+  for (const [cx, cy] of [[4, 4], [sw - 5, 4], [4, sh - 5], [sw - 5, sh - 5]]) {
+    const i = (cy * sw + cx) * 4;
+    br += pd[i]; bg2 += pd[i + 1]; bb += pd[i + 2]; cnt++;
+  }
+  br /= cnt; bg2 /= cnt; bb /= cnt;
+  const prof = new Float64Array(sw);
+  for (let x = 0; x < sw; x++) {
+    let c = 0;
+    for (let y = 0; y < sh; y += 2) {
+      const i = (y * sw + x) * 4;
+      if (pd[i + 3] < 250 || Math.abs(pd[i] - br) > 25 || Math.abs(pd[i + 1] - bg2) > 25 || Math.abs(pd[i + 2] - bb) > 25) c++;
+    }
+    prof[x] = c;
+  }
+  const win = Math.max(3, Math.round(sw / 300));
+  const sm = new Float64Array(sw);
+  for (let x = 0; x < sw; x++) {
+    let sum = 0, n = 0;
+    for (let k = -win; k <= win; k++) { const xx = x + k; if (xx >= 0 && xx < sw) { sum += prof[xx]; n++; } }
+    sm[x] = sum / n;
+  }
+  const thr = Math.max(2, sh * 0.01);
+  let runs = [], inRun = false, start = 0;
+  for (let x = 0; x < sw; x++) {
+    if (sm[x] > thr && !inRun) { start = x; inRun = true; }
+    else if (sm[x] <= thr && inRun) { runs.push([start, x]); inRun = false; }
+  }
+  if (inRun) runs.push([start, sw]);
+  runs = runs.filter(r => r[1] - r[0] > sw * 0.02);
+  if (!runs.length) return null;
+  // touching figures merged into one run: split the widest run at its
+  // profile valley (central 20-80%) until the count reaches cols
+  while (runs.length < cols) {
+    let bi = -1, bw = 0;
+    for (let i = 0; i < runs.length; i++) { const wd = runs[i][1] - runs[i][0]; if (wd > bw) { bw = wd; bi = i; } }
+    if (bi < 0) break;
+    const a = runs[bi][0], b = runs[bi][1];
+    const lo = a + Math.round((b - a) * 0.2), hi = a + Math.round((b - a) * 0.8);
+    let sx = lo, sv = Infinity;
+    for (let x = lo; x < hi; x++) if (sm[x] < sv) { sv = sm[x]; sx = x; }
+    runs.splice(bi, 1, [a, sx], [sx, b]);
+  }
+  const bounds = [0];
+  for (let i = 0; i < runs.length - 1; i++) bounds.push(Math.round((runs[i][1] + runs[i + 1][0]) / 2));
+  bounds.push(sw);
+  const cells = [];
+  for (let i = 0; i < runs.length; i++) cells.push({ x: bounds[i], w: bounds[i + 1] - bounds[i] });
+  return cells;
+}
+
 function buildPoses(cols, useRim = true) {
   const sw = sheetImg.width, sh = sheetImg.height, pw = Math.floor(sw / cols);
   // near-white sheet background: removeBg alone is correct; the colour flood
@@ -694,10 +765,18 @@ function buildPoses(cols, useRim = true) {
     }
     bgNearWhite = (rS / cnt >= 245 && gS / cnt >= 245 && bS / cnt >= 245);
   }
-  const mx = Math.round(pw * 0.12);
+  let cells = null;
+  if ((($("cutMode") || {}).value || "auto") === "auto") cells = detectCells(cols);
+  if (cells) {
+    log("自動検出: " + cells.length + "体を見つけました（指定 " + cols + "）");
+  } else {
+    cells = [];
+    for (let i = 0; i < cols; i++) cells.push({ x: i * pw, w: pw });
+  }
   const poses = [];
-  for (let i = 0; i < cols; i++) {
-    const x0 = Math.max(0, i * pw - mx), x1 = Math.min(sw, (i + 1) * pw + mx);
+  for (let i = 0; i < cells.length; i++) {
+    const cell = cells[i], cellW = cell.w, mx = Math.round(cellW * 0.12);
+    const x0 = Math.max(0, cell.x - mx), x1 = Math.min(sw, cell.x + cellW + mx);
     const c = document.createElement("canvas");
     c.width = x1 - x0;
     c.height = sh;
@@ -718,7 +797,7 @@ function buildPoses(cols, useRim = true) {
     // figure's own column (detached ears and accessories must survive; the
     // neighbours' slivers live in the overlap margins and are dropped)
     const keep = new Set([big]);
-    const colL = x0 === 0 ? 0 : mx, colR = colL + pw;
+    const colL = cell.x - x0, colR = colL + cellW;
     for (let k = 1; k < lr.n; k++) {
       if (k === big || sizes[k] < Math.max(150, sizes[big] * 0.02)) continue;
       const cx = sumX[k] / sizes[k];
@@ -747,6 +826,18 @@ function buildPoses(cols, useRim = true) {
       const keepAnchor = trimmed._anchor;
       trimmed = trimCanvas(trimmed);
       trimmed._anchor = keepAnchor;
+    }
+    // feet anchor: alpha centroid of the lowest band (what must not drift)
+    {
+      const tctx2 = trimmed.getContext("2d");
+      const td = tctx2.getImageData(0, 0, trimmed.width, trimmed.height).data;
+      const y0 = Math.floor(trimmed.height * 0.8);
+      let sw2 = 0, sx2 = 0;
+      for (let y = y0; y < trimmed.height; y++) for (let x = 0; x < trimmed.width; x++) {
+        const a = td[(y * trimmed.width + x) * 4 + 3];
+        if (a > 10) { sw2 += a; sx2 += x * a; }
+      }
+      trimmed._feetCx = sw2 > 0 ? sx2 / sw2 : trimmed.width / 2;
     }
     poses.push(trimmed);
     log("ポーズ" + (i + 1) + ": " + trimmed.width + "×" + trimmed.height);
@@ -866,6 +957,46 @@ function composeAnim(poses, mode) {
     sampled.forEach((f, i) => { f.dur = i === N - 1 ? total - per * (N - 1) : per; });
     plan.length = 0; plan.push(...sampled);
   }
+  // 1.9) optional lower-body lock: align all poses in a common frame (feet
+  // registered, bottoms aligned) and replace everything below a seam with
+  // the donor pose's lower body, cross-faded at the seam
+  const lockOn = (($("lockLower") || {}).value || "off") === "on";
+  if (lockOn && poses.length > 1) {
+    const donorIdx = Math.min(parseInt(($("lockDonor") || {}).value || "0", 10), poses.length - 1);
+    const feetOf = p => (p._feetCx !== undefined ? p._feetCx : p.width / 2);
+    const commonFeet = Math.max(...poses.map(feetOf));
+    const W2 = Math.ceil(commonFeet + Math.max(...poses.map(p => p.width - feetOf(p))));
+    const H2 = Math.max(...poses.map(p => p.height));
+    const lockH = Math.round(H2 * 0.38), fade = Math.max(6, Math.round(lockH * 0.3));
+    const seamTop = H2 - lockH;
+    const placed = poses.map(p => {
+      const c = document.createElement("canvas");
+      c.width = W2; c.height = H2;
+      c.getContext("2d").drawImage(p, Math.round(commonFeet - feetOf(p)), H2 - p.height);
+      c._feetCx = commonFeet;
+      return c;
+    });
+    const donor = placed[donorIdx];
+    for (let i = 0; i < placed.length; i++) {
+      if (i === donorIdx) { poses[i] = placed[i]; continue; }
+      const c = placed[i], ctx = c.getContext("2d");
+      // donor lower body clipped to the seam zone, gradient at the seam
+      const zone = document.createElement("canvas");
+      zone.width = W2; zone.height = H2;
+      const zctx = zone.getContext("2d");
+      zctx.drawImage(donor, 0, 0);
+      const grad = zctx.createLinearGradient(0, seamTop - fade, 0, seamTop + fade);
+      grad.addColorStop(0, "rgba(0,0,0,0)");
+      grad.addColorStop(0.5, "rgba(0,0,0,1)");
+      grad.addColorStop(1, "rgba(0,0,0,1)");
+      zctx.globalCompositeOperation = "destination-in";
+      zctx.fillStyle = grad;
+      zctx.fillRect(0, seamTop - fade, W2, H2 - seamTop + fade);
+      ctx.drawImage(zone, 0, 0);
+      poses[i] = c;
+    }
+    log("下半身固定: ドナー=ポーズ" + (donorIdx + 1) + " / 継ぎ目 " + Math.round(100 * (1 - 0.38)) + "%高さ");
+  }
   // 2) char-first layout: character fills the frame; text overlays (never over the face zone)
   let ground, heightCap, charCx = M.w / 2;
   if (place === "top") { ground = Math.round(M.h * 0.99); heightCap = 0.76; }
@@ -874,7 +1005,14 @@ function composeAnim(poses, mode) {
   const anchors = poses.map(p => p._anchor || { dx: 0, dy: 0, sw: p.width, sh: p.height });
   const maxPoseH = Math.max(...poses.map(p => p.height));
   const maxPoseW = Math.max(...poses.map(p => p.width));
+  const anchorMode = ($("anchor") || {}).value || "feet";
+  const feetOf2 = p => (p._feetCx !== undefined ? p._feetCx : p.width / 2);
   let scale = Math.min((M.h * heightCap * big) / maxPoseH, (M.w * 0.96) / maxPoseW);
+  if (anchorMode === "feet") {
+    const maxL = Math.max(...poses.map(feetOf2));
+    const maxR = Math.max(...poses.map(p => p.width - feetOf2(p)));
+    scale = Math.min(scale, (charCx * 0.98) / maxL, ((M.w - charCx) * 0.98) / maxR);
+  }
   // anti-clip: no frame (incl. lift and idle swell) may cross the top margin
   const margin = 6 * sRatio;
   for (const f of plan) {
@@ -918,7 +1056,9 @@ function composeAnim(poses, mode) {
     const prot = (pf && pf.prot ? pf.prot : 0) * Math.PI / 180;
     const wid = Math.round(img.width * psx);
     const hgt = Math.round(img.height * syF);
-    const x = Math.round(charCx - wid / 2 + xOff * sRatio + (pf && pf.pdx ? pf.pdx * sRatio : 0));
+    const x = anchorMode === "feet"
+      ? Math.round(charCx - feetOf2(poses[poseIdx]) * scale * psx + xOff * sRatio + (pf && pf.pdx ? pf.pdx * sRatio : 0))
+      : Math.round(charCx - wid / 2 + xOff * sRatio + (pf && pf.pdx ? pf.pdx * sRatio : 0));
     const y = ground - hgt + Math.round(liftF * sRatio);
     const totalRot = rot + prot;
     const anchorY = Math.abs(prot) > 0.01 ? ground - Math.round(hgt / 2) : ground;
@@ -1170,6 +1310,9 @@ function currentRecipe() {
            timing: ($("timing") || {}).value || "ease", charSize: ($("charSize") || {}).value || "std",
            idle: ($("idle") || {}).value || "off", textSize: ($("textSize") || {}).value || "53",
            preset: ($("preset") || {}).value || "none",
+           anchor: ($("anchor") || {}).value || "feet", lockLower: ($("lockLower") || {}).value || "off",
+           lockDonor: ($("lockDonor") || {}).value || "0",
+           cutMode: ($("cutMode") || {}).value || "auto",
            tone: ($("tone") || {}).value || "vivid", shadow: ($("shadow") || {}).value || "on" };
 }
 $("copyRecipe").addEventListener("click", () => { $("recipe").value = JSON.stringify(currentRecipe()); });
@@ -1193,6 +1336,10 @@ $("loadRecipe").addEventListener("click", () => {
     if (r.tone && $("tone")) $("tone").value = r.tone;
     if (r.shadow && $("shadow")) $("shadow").value = r.shadow;
     if (r.preset && $("preset")) $("preset").value = r.preset;
+    if (r.anchor && $("anchor")) $("anchor").value = r.anchor;
+    if (r.lockLower && $("lockLower")) $("lockLower").value = r.lockLower;
+    if (r.lockDonor && $("lockDonor")) $("lockDonor").value = r.lockDonor;
+    if (r.cutMode && $("cutMode")) $("cutMode").value = r.cutMode;
     if (r.sparkle !== undefined) $("sparkle").checked = !!r.sparkle;
     log("レシピを読み込みました。「作る」を押してください。");
   } catch (e) { log("レシピの形式が違います"); }
