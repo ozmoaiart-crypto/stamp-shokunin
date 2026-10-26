@@ -22,7 +22,7 @@
 </style>
 </head>
 <body>
-<h1>🎀 スタンプ職人（Oz専用 v1.9.7）</h1>
+<h1>🎀 スタンプ職人（Oz専用 v2.0）</h1>
 <p class="small">シート／単体イラスト（文字なし）を読み込むと、切り分け → ふちなし透過 → 仕上げ → 書き出しまで自動。常時「高品質モード」：LINE仕様の上限いっぱいまで色数・解像度を自動で最大化します。</p>
 
 <div class="row">
@@ -70,7 +70,7 @@
     <option value="lavender">ラベンダー</option>
   </select>
   <label>文字の大きさ</label>
-  <select id="textSize"><option value="62">大</option><option value="53" selected>中</option><option value="45">小</option></select>
+  <select id="textSize"><option value="62">大</option><option value="53" selected>中</option><option value="45">小</option><option value="38">特小</option><option value="32">極小</option></select>
   <label>文字位置（静止）</label>
   <select id="textPos">
     <option value="bottom" selected>下</option>
@@ -86,7 +86,7 @@
   <label>文字配置（動く）</label>
   <select id="textPlace"><option value="bottom" selected>下</option><option value="top">上</option><option value="left">左・縦書き</option></select>
   <label>文字アニメ</label>
-  <select id="textAnim"><option value="bounce" selected>全体バウンス</option><option value="seq">1文字ずつ出現</option><option value="fade">フェード</option><option value="fixed">固定</option></select>
+  <select id="textAnim"><option value="bounce" selected>全体バウンス</option><option value="seq">1文字ずつ出現</option><option value="type">タイピング（あ→あり→ありがとう）</option><option value="fade">フェード</option><option value="fixed">固定</option></select>
   <label>刻み</label>
   <select id="timing"><option value="ease" selected>緩急</option><option value="uniform">均等（ヌルヌル）</option><option value="hold">ホールド（往復＋溜め）</option><option value="soft">出入りゆっくり（往復シート向け）</option></select>
   <label>1枚絵モーション</label>
@@ -550,7 +550,12 @@ function drawTextFrame(ctx, text, colorKey, frameIdx, totalFrames, tsBounce, W, 
     return;
   }
   const cy = place === "top" ? H * 0.16 : H * 0.845;
-  if (anim === "seq") {
+  if (anim === "seq" || anim === "type") {
+    // typing: the word builds up あ→あり→ありが… and completes by ~80%
+    if (anim === "type") {
+      const done = Math.ceil(letters.length * Math.min(1, (frameIdx + 1) / Math.max(1, totalFrames) / 0.8));
+      reveal = Math.max(1, Math.min(letters.length, done));
+    }
     ctx.font = `800 ${fontPx}px "M PLUS Rounded 1c","Hiragino Maru Gothic ProN",sans-serif`;
     const widths = letters.map(ch => ctx.measureText(ch).width);
     const total = widths.reduce((a, b) => a + b, 0);
@@ -558,7 +563,7 @@ function drawTextFrame(ctx, text, colorKey, frameIdx, totalFrames, tsBounce, W, 
     letters.forEach((ch, i) => {
       const cx = x + widths[i] / 2; x += widths[i];
       if (i >= reveal) return;
-      const pop = (i === reveal - 1 && frameIdx < totalFrames - 1) ? 1.15 : 1.0;
+      const pop = (i === reveal - 1 && frameIdx < totalFrames - 1) ? 1.18 : 1.0;
       drawPuffy(ctx, ch, colorKey, cx, cy, fontPx, pop, alpha);
     });
   } else {
