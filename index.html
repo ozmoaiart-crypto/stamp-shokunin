@@ -22,7 +22,7 @@
 </style>
 </head>
 <body>
-<h1>🎀 スタンプ職人（Oz専用 v1.4.1）</h1>
+<h1>🎀 スタンプ職人（Oz専用 v1.5）</h1>
 <p class="small">シート／単体イラスト（文字なし）を読み込むと、切り分け → ふちなし透過 → 仕上げ → 書き出しまで自動。常時「高品質モード」：LINE仕様の上限いっぱいまで色数・解像度を自動で最大化します。</p>
 
 <div class="row">
@@ -88,6 +88,8 @@
   <select id="charSize"><option value="std" selected>標準</option><option value="big">大きめ</option></select>
   <label>アイドル層</label>
   <select id="idle"><option value="off" selected>なし</option><option value="on">あり（呼吸＋スウェイ）</option></select>
+  <label>色調</label>
+  <select id="tone"><option value="vivid" selected>あざやか</option><option value="plain">そのまま</option></select>
   <label><input type="checkbox" id="sparkle" checked> キラキラ</label>
   <label><input type="checkbox" id="dither" checked> ディザ</label>
 </div>
@@ -631,6 +633,27 @@ function clearByBgColor(imgData) {
 }
 
 /* ---------- pose building (shared by all modes) ---------- */
+function vividCanvas(src, satMul = 1.28, conMul = 1.05) {
+  const c = document.createElement("canvas");
+  c.width = src.width; c.height = src.height;
+  const ctx = c.getContext("2d");
+  ctx.drawImage(src, 0, 0);
+  const id = ctx.getImageData(0, 0, c.width, c.height);
+  const d = id.data;
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] === 0) continue;
+    let r = d[i] / 255, g = d[i + 1] / 255, b = d[i + 2] / 255;
+    r = (r - 0.5) * conMul + 0.5; g = (g - 0.5) * conMul + 0.5; b = (b - 0.5) * conMul + 0.5;
+    const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    r = luma + (r - luma) * satMul; g = luma + (g - luma) * satMul; b = luma + (b - luma) * satMul;
+    d[i] = Math.max(0, Math.min(255, Math.round(r * 255)));
+    d[i + 1] = Math.max(0, Math.min(255, Math.round(g * 255)));
+    d[i + 2] = Math.max(0, Math.min(255, Math.round(b * 255)));
+  }
+  ctx.putImageData(id, 0, 0);
+  return c;
+}
+
 function buildPoses(cols) {
   const sw = sheetImg.width, sh = sheetImg.height, pw = Math.floor(sw / cols);
   const poses = [];
@@ -674,19 +697,43 @@ function composeAnim(poses, mode) {
   const timingMode = ($("timing") || {}).value || "ease";
   const big = (($("charSize") || {}).value || "std") === "big" ? 1.16 : 1.0;
   const tempoMul = parseInt(($("tempo") || {}).value || "1", 10);
-  let ground, stageRatio, charCx = M.w / 2;
-  if (place === "top") { ground = Math.round(M.h * 0.99); stageRatio = 0.74; }
-  else if (place === "left") { ground = Math.round(M.h * 0.97); stageRatio = 0.80; charCx = Math.round(M.w * 0.585); }
-  else { ground = Math.round(M.h * 0.66); stageRatio = 0.62; }
+  const sRatio = M.w / 320;
+  // 1) build the frame plan first (pose, duration, lift, sy, text-scale)
+  const plan = [];
+  if (timingMode === "uniform") {
+    const seqU = [];
+    poses.forEach((_, i) => { seqU.push([i, 1.0, 0]); seqU.push([i, 0.985, 1]); });
+    const total = 1000 * tempoMul;
+    const per = Math.floor(total / seqU.length / 10) * 10;
+    seqU.forEach(([pi, sy, lift], i) => plan.push({ pi, dur: i === seqU.length - 1 ? total - per * (seqU.length - 1) : per, lift, sy, ts: 1.0 }));
+  } else if (T) {
+    T.seq.forEach(([pi, dur, lift, sy], i) => plan.push({ pi, dur: dur * tempoMul, lift, sy, ts: T.ts[i] || 1.0 }));
+  } else {
+    const order = poses.map((_, i) => i).concat(poses.map((_, i) => poses.length - 1 - i));
+    const per = Math.floor(1000 / order.length);
+    order.forEach((pi, i) => plan.push({ pi, dur: (i === order.length - 1 ? 1000 - per * (order.length - 1) : per) * tempoMul, lift: 0, sy: 1.0, ts: 1.0 }));
+  }
+  // 2) char-first layout: character fills the frame; text overlays (never over the face zone)
+  let ground, heightCap, charCx = M.w / 2;
+  if (place === "top") { ground = Math.round(M.h * 0.99); heightCap = 0.76; }
+  else if (place === "left") { ground = Math.round(M.h * 0.985); heightCap = 0.95; charCx = Math.round(M.w * 0.585); }
+  else { ground = Math.round(M.h * 0.985); heightCap = 0.95; }
   const maxPoseH = Math.max(...poses.map(p => p.height));
-  const scale = (M.h * stageRatio * big) / maxPoseH;
-  const scaled = poses.map(p => {
+  const maxPoseW = Math.max(...poses.map(p => p.width));
+  let scale = Math.min((M.h * heightCap * big) / maxPoseH, (M.w * 0.96) / maxPoseW);
+  // anti-clip: no frame (incl. lift and idle swell) may cross the top margin
+  const margin = 6 * sRatio;
+  for (const f of plan) {
+    const bound = (ground + (f.lift - 1.6) * sRatio - margin) / (poses[f.pi].height * f.sy * 1.013);
+    if (bound > 0) scale = Math.min(scale, bound);
+  }
+  let scaled = poses.map(p => {
     const c = document.createElement("canvas");
     c.width = Math.round(p.width * scale); c.height = Math.round(p.height * scale);
     c.getContext("2d").drawImage(p, 0, 0, c.width, c.height);
     return c;
   });
-  const sRatio = M.w / 320;
+  if ((($("tone") || {}).value || "vivid") === "vivid") scaled = scaled.map(c => vividCanvas(c));
   const idleOn = (($("idle") || {}).value || "off") === "on";
   const frames = [], durations = [];
   const pushFrame = (poseIdx, dur, lift, sy, ts) => {
@@ -719,27 +766,8 @@ function composeAnim(poses, mode) {
     drawTextFrame(ctx, text, colorKey, frames.length, TOTAL_FRAMES, ts, M.w, M.h, sRatio);
     frames.push(c); durations.push(dur);
   };
-  let TOTAL_FRAMES = 0;
-  if (timingMode === "uniform") {
-    // pose cuts x2 (plain + settle) at uniform durations: small-step sheets read nurunuru
-    const seqU = [];
-    poses.forEach((_, i) => { seqU.push([i, 1.0, 0]); seqU.push([i, 0.985, 1]); });
-    TOTAL_FRAMES = seqU.length;
-    const total = 1000 * tempoMul;
-    const per = Math.floor(total / TOTAL_FRAMES / 10) * 10;
-    seqU.forEach(([pi, sy, lift], i) => {
-      const dur = i === TOTAL_FRAMES - 1 ? total - per * (TOTAL_FRAMES - 1) : per;
-      pushFrame(pi, dur, lift, sy, 1.0);
-    });
-  } else if (T) {
-    TOTAL_FRAMES = T.seq.length;
-    T.seq.forEach(([pi, dur, lift, sy], i) => pushFrame(pi, dur * tempoMul, lift, sy, T.ts[i] || 1.0));
-  } else {
-    const order = poses.map((_, i) => i).concat(poses.map((_, i) => poses.length - 1 - i));
-    TOTAL_FRAMES = order.length;
-    const per = Math.floor(1000 / order.length);
-    order.forEach((pi, i) => pushFrame(pi, (i === order.length - 1 ? 1000 - per * (order.length - 1) : per) * tempoMul, 0, 1.0, 1.0));
-  }
+  let TOTAL_FRAMES = plan.length;
+  plan.forEach(f => pushFrame(f.pi, f.dur, f.lift, f.sy, f.ts));
   return { frames, durations };
 }
 
@@ -913,7 +941,8 @@ function currentRecipe() {
            plays: $("plays").value, tempo: ($("tempo") || {}).value || "1", sparkle: $("sparkle").checked,
            textPlace: ($("textPlace") || {}).value || "bottom", textAnim: ($("textAnim") || {}).value || "bounce",
            timing: ($("timing") || {}).value || "ease", charSize: ($("charSize") || {}).value || "std",
-           idle: ($("idle") || {}).value || "off", textSize: ($("textSize") || {}).value || "53" };
+           idle: ($("idle") || {}).value || "off", textSize: ($("textSize") || {}).value || "53",
+           tone: ($("tone") || {}).value || "vivid" };
 }
 $("copyRecipe").addEventListener("click", () => { $("recipe").value = JSON.stringify(currentRecipe()); });
 $("loadRecipe").addEventListener("click", () => {
@@ -933,6 +962,7 @@ $("loadRecipe").addEventListener("click", () => {
     if (r.charSize && $("charSize")) $("charSize").value = r.charSize;
     if (r.idle && $("idle")) $("idle").value = r.idle;
     if (r.textSize && $("textSize")) $("textSize").value = r.textSize;
+    if (r.tone && $("tone")) $("tone").value = r.tone;
     if (r.sparkle !== undefined) $("sparkle").checked = !!r.sparkle;
     log("レシピを読み込みました。「作る」を押してください。");
   } catch (e) { log("レシピの形式が違います"); }
