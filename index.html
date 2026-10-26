@@ -22,7 +22,7 @@
 </style>
 </head>
 <body>
-<h1>🎀 スタンプ職人（Oz専用 v1.9.4）</h1>
+<h1>🎀 スタンプ職人（Oz専用 v1.9.5）</h1>
 <p class="small">シート／単体イラスト（文字なし）を読み込むと、切り分け → ふちなし透過 → 仕上げ → 書き出しまで自動。常時「高品質モード」：LINE仕様の上限いっぱいまで色数・解像度を自動で最大化します。</p>
 
 <div class="row">
@@ -42,7 +42,10 @@
   <label>ポーズ数（横）</label>
   <select id="cols">
     <option value="1">1（単体）</option>
+    <option value="2">2</option>
     <option value="3">3</option>
+    <option value="4">4</option>
+    <option value="6">6</option>
     <option value="5" selected>5</option>
     <option value="7">7</option>
     <option value="8">8</option>
@@ -711,14 +714,14 @@ function detectCells(cols) {
     }
     prof[x] = c;
   }
-  const win = Math.max(3, Math.round(sw / 300));
+  const win = Math.max(2, Math.round(sw / 900));
   const sm = new Float64Array(sw);
   for (let x = 0; x < sw; x++) {
     let sum = 0, n = 0;
     for (let k = -win; k <= win; k++) { const xx = x + k; if (xx >= 0 && xx < sw) { sum += prof[xx]; n++; } }
     sm[x] = sum / n;
   }
-  const thr = Math.max(2, sh * 0.01);
+  const thr = Math.max(1.5, sh * 0.006);
   let runs = [], inRun = false, start = 0;
   for (let x = 0; x < sw; x++) {
     if (sm[x] > thr && !inRun) { start = x; inRun = true; }
