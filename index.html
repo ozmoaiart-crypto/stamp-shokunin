@@ -22,7 +22,7 @@
 </style>
 </head>
 <body>
-<h1>🎀 スタンプ職人（Oz専用 v1.9.5）</h1>
+<h1>🎀 スタンプ職人（Oz専用 v1.9.6）</h1>
 <p class="small">シート／単体イラスト（文字なし）を読み込むと、切り分け → ふちなし透過 → 仕上げ → 書き出しまで自動。常時「高品質モード」：LINE仕様の上限いっぱいまで色数・解像度を自動で最大化します。</p>
 
 <div class="row">
@@ -768,8 +768,9 @@ function buildPoses(cols, useRim = true) {
     }
     bgNearWhite = (rS / cnt >= 245 && gS / cnt >= 245 && bS / cnt >= 245);
   }
-  let cells = null;
+  let cells = null, cellsDetected = false;
   if ((($("cutMode") || {}).value || "auto") === "auto") cells = detectCells(cols);
+  if (cells) cellsDetected = true;
   if (cells) {
     log("自動検出: " + cells.length + "体を見つけました（指定 " + cols + "）");
   } else {
@@ -807,6 +808,13 @@ function buildPoses(cols, useRim = true) {
       if (cx >= colL - 4 && cx <= colR + 4) keep.add(k);
     }
     for (let p = 0; p < w2 * h2; p++) if (solid[p] && !keep.has(lr.lab[p])) data[p * 4 + 3] = 0;
+    // auto-detected cells partition the sheet: nothing outside the figure's
+    // own cell can belong to it (kills neighbour aprons bleeding into frame)
+    if (cellsDetected) {
+      for (let y = 0; y < h2; y++) for (let x = 0; x < w2; x++) {
+        if (x < colL || x > colR) data[(y * w2 + x) * 4 + 3] = 0;
+      }
+    }
     ctx.putImageData(id, 0, 0);
     decontaminateWhite(c);
     // remember where the figure sits inside its slice, so frames can be
