@@ -22,7 +22,7 @@
 </style>
 </head>
 <body>
-<h1>🎀 スタンプ職人（Oz専用 v1.5）</h1>
+<h1>🎀 スタンプ職人（Oz専用 v1.5.1）</h1>
 <p class="small">シート／単体イラスト（文字なし）を読み込むと、切り分け → ふちなし透過 → 仕上げ → 書き出しまで自動。常時「高品質モード」：LINE仕様の上限いっぱいまで色数・解像度を自動で最大化します。</p>
 
 <div class="row">
@@ -90,6 +90,8 @@
   <select id="idle"><option value="off" selected>なし</option><option value="on">あり（呼吸＋スウェイ）</option></select>
   <label>色調</label>
   <select id="tone"><option value="vivid" selected>あざやか</option><option value="plain">そのまま</option></select>
+  <label>影</label>
+  <select id="shadow"><option value="on" selected>あり</option><option value="off">なし</option></select>
   <label><input type="checkbox" id="sparkle" checked> キラキラ</label>
   <label><input type="checkbox" id="dither" checked> ディザ</label>
 </div>
@@ -99,6 +101,7 @@
   <button id="dlExtra1" class="sub" disabled>メイン画像を保存</button>
   <button id="dlExtra2" class="sub" disabled>タブ画像を保存</button>
   <button id="dlPreview" class="sub" disabled>プレビューGIFを保存</button>
+  <button id="dlCheck" class="sub" disabled>チェックシートを保存</button>
 </div>
 <div class="row"><canvas id="preview" width="320" height="270"></canvas></div>
 <div class="row" id="log"></div>
@@ -734,6 +737,17 @@ function composeAnim(poses, mode) {
     return c;
   });
   if ((($("tone") || {}).value || "vivid") === "vivid") scaled = scaled.map(c => vividCanvas(c));
+  const shadowOn = (($("shadow") || {}).value || "on") === "on";
+  const silhouettes = scaled.map(c => {
+    const sc = document.createElement("canvas");
+    sc.width = c.width; sc.height = c.height;
+    const sctx = sc.getContext("2d");
+    sctx.drawImage(c, 0, 0);
+    sctx.globalCompositeOperation = "source-in";
+    sctx.fillStyle = "rgba(26,26,48,0.42)";
+    sctx.fillRect(0, 0, sc.width, sc.height);
+    return sc;
+  });
   const idleOn = (($("idle") || {}).value || "off") === "on";
   const frames = [], durations = [];
   const pushFrame = (poseIdx, dur, lift, sy, ts) => {
@@ -752,6 +766,13 @@ function composeAnim(poses, mode) {
     const hgt = Math.round(img.height * syF);
     const x = Math.round(charCx - img.width / 2 + xOff * sRatio);
     const y = ground - hgt + Math.round(liftF * sRatio);
+    if (shadowOn) {
+      ctx.save();
+      if (rot !== 0) { ctx.translate(charCx, ground); ctx.rotate(rot); ctx.translate(-charCx, -ground); }
+      ctx.filter = "blur(3px)";
+      ctx.drawImage(silhouettes[poseIdx], x, y + Math.round(5 * sRatio), img.width, hgt);
+      ctx.restore();
+    }
     if (rot !== 0) {
       ctx.save();
       ctx.translate(charCx, ground);
@@ -854,6 +875,7 @@ $("build").addEventListener("click", async () => {
   }
   $("dlMain2").disabled = false; $("dlExtra1").disabled = false; $("dlExtra2").disabled = false;
   $("dlPreview").disabled = !(built && built.kind === "anim");
+  $("dlCheck").disabled = !built;
   log("完成しました。下のボタンから保存できます。");
 });
 
@@ -929,6 +951,28 @@ $("dlPreview").addEventListener("click", () => {
   download(blob, "preview.gif");
   log("プレビューGIF: " + Math.round(blob.size / 1024) + "KB");
 });
+$("dlCheck").addEventListener("click", () => {
+  if (!built) return;
+  const list = built.kind === "anim" ? built.frames : [built.still];
+  const picks = [];
+  const N = Math.min(6, list.length);
+  for (let k = 0; k < N; k++) picks.push(list[Math.floor(k * list.length / N)]);
+  const w = picks[0].width, h = picks[0].height, sc = 0.5;
+  const sheet = document.createElement("canvas");
+  sheet.width = Math.round(w * sc) * picks.length;
+  sheet.height = Math.round(h * sc) * 2;
+  const ctx = sheet.getContext("2d");
+  const bgs = [[255, 0, 255], [24, 24, 32]];
+  bgs.forEach((bg, r) => {
+    picks.forEach((f, ci) => {
+      const x = ci * Math.round(w * sc), y = r * Math.round(h * sc);
+      ctx.fillStyle = `rgb(${bg[0]},${bg[1]},${bg[2]})`;
+      ctx.fillRect(x, y, Math.round(w * sc), Math.round(h * sc));
+      ctx.drawImage(f, x, y, Math.round(w * sc), Math.round(h * sc));
+    });
+  });
+  sheet.toBlob(b => download(b, "check_sheet.png"), "image/png");
+});
 $("dlExtra2").addEventListener("click", async () => {
   if (!built) return;
   built.tabCanvas.toBlob(b => download(b, "tab.png"), "image/png");
@@ -942,7 +986,7 @@ function currentRecipe() {
            textPlace: ($("textPlace") || {}).value || "bottom", textAnim: ($("textAnim") || {}).value || "bounce",
            timing: ($("timing") || {}).value || "ease", charSize: ($("charSize") || {}).value || "std",
            idle: ($("idle") || {}).value || "off", textSize: ($("textSize") || {}).value || "53",
-           tone: ($("tone") || {}).value || "vivid" };
+           tone: ($("tone") || {}).value || "vivid", shadow: ($("shadow") || {}).value || "on" };
 }
 $("copyRecipe").addEventListener("click", () => { $("recipe").value = JSON.stringify(currentRecipe()); });
 $("loadRecipe").addEventListener("click", () => {
@@ -963,6 +1007,7 @@ $("loadRecipe").addEventListener("click", () => {
     if (r.idle && $("idle")) $("idle").value = r.idle;
     if (r.textSize && $("textSize")) $("textSize").value = r.textSize;
     if (r.tone && $("tone")) $("tone").value = r.tone;
+    if (r.shadow && $("shadow")) $("shadow").value = r.shadow;
     if (r.sparkle !== undefined) $("sparkle").checked = !!r.sparkle;
     log("レシピを読み込みました。「作る」を押してください。");
   } catch (e) { log("レシピの形式が違います"); }
