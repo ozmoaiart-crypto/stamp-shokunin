@@ -22,7 +22,7 @@
 </style>
 </head>
 <body>
-<h1>🎀 スタンプ職人（Oz専用 v1.9.3）</h1>
+<h1>🎀 スタンプ職人（Oz専用 v1.9.4）</h1>
 <p class="small">シート／単体イラスト（文字なし）を読み込むと、切り分け → ふちなし透過 → 仕上げ → 書き出しまで自動。常時「高品質モード」：LINE仕様の上限いっぱいまで色数・解像度を自動で最大化します。</p>
 
 <div class="row">
@@ -85,7 +85,7 @@
   <label>文字アニメ</label>
   <select id="textAnim"><option value="bounce" selected>全体バウンス</option><option value="seq">1文字ずつ出現</option><option value="fade">フェード</option><option value="fixed">固定</option></select>
   <label>刻み</label>
-  <select id="timing"><option value="ease" selected>緩急</option><option value="uniform">均等（ヌルヌル）</option><option value="hold">ホールド（往復＋溜め）</option></select>
+  <select id="timing"><option value="ease" selected>緩急</option><option value="uniform">均等（ヌルヌル）</option><option value="hold">ホールド（往復＋溜め）</option><option value="soft">出入りゆっくり（往復シート向け）</option></select>
   <label>1枚絵モーション</label>
   <select id="preset"><option value="none" selected>なし（シートのポーズを使う）</option><option value="bow">ぺこり（おじぎ×2）</option><option value="deepbow">深ぺこり</option><option value="nod">うんうん</option><option value="sway">ゆらゆら</option><option value="rock">ノリノリ</option><option value="hop">ぴょんぴょん</option><option value="heartbeat">ドキドキ</option><option value="float">ふわふわ</option><option value="pop">ポンッと登場</option></select>
   <label>配置基準（動く）</label>
@@ -917,6 +917,30 @@ function composeAnim(poses, mode) {
     const total = 1000 * tempoMul;
     const per = Math.floor(total / seqU.length / 10) * 10;
     seqU.forEach(([pi, sy, lift], i) => plan.push({ pi, dur: i === seqU.length - 1 ? total - per * (seqU.length - 1) : per, lift, sy, ts: 1.0 }));
+  } else if (timingMode === "soft") {
+    // full-cycle sheet (poses already contain the return trip): play one-way
+    // and weight each pose's duration by how far the head travels to its
+    // neighbours (pose height delta), with extra hold on the first/last pose
+    // and on the shortest pose (deepest point of the motion)
+    const total = 1000 * tempoMul;
+    const hs = poses.map(p => p.height);
+    const minH = Math.min(...hs);
+    const wts = hs.map((h, i) => {
+      const dPrev = i > 0 ? Math.abs(h - hs[i - 1]) : 0;
+      const dNext = i < hs.length - 1 ? Math.abs(h - hs[i + 1]) : 0;
+      let wi = 1 + (dPrev + dNext) / 150;
+      if (i === 0 || i === hs.length - 1) wi *= 1.5;
+      if (h === minH) wi *= 1.35;
+      return wi;
+    });
+    const wsum = wts.reduce((a, b) => a + b, 0);
+    let used = 0;
+    hs.forEach((_, i) => {
+      let dur = Math.round(total * wts[i] / wsum / 10) * 10;
+      if (i === hs.length - 1) dur = total - used;
+      used += dur;
+      plan.push({ pi: i, dur, lift: 0, sy: 1.0, ts: 1.0 });
+    });
   } else if (T) {
     T.seq.forEach(([pi, dur, lift, sy], i) => plan.push({ pi, dur: dur * tempoMul, lift, sy, ts: T.ts[i] || 1.0 }));
   } else {
