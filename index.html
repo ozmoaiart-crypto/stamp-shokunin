@@ -22,7 +22,7 @@
 </style>
 </head>
 <body>
-<h1>🎀 スタンプ職人（Oz専用 v2.2.1）</h1>
+<h1>🎀 スタンプ職人（Oz専用 v2.2.6）</h1>
 <p class="small">シート／単体イラスト（文字なし）を読み込むと、切り分け → ふちなし透過 → 仕上げ → 書き出しまで自動。常時「高品質モード」：LINE仕様の上限いっぱいまで色数・解像度を自動で最大化します。</p>
 
 <div class="row">
@@ -64,7 +64,10 @@
   <label>文字色</label>
   <select id="color">
     <option value="pink" selected>ピンク</option>
-    <option value="multi">カラフル（1文字ずつ）</option>
+    <option value="multi">カラフルA（ピンク始まり）</option>
+    <option value="multi2">カラフルB（オレンジ始まり）</option>
+    <option value="multi3">カラフルC（みどり始まり）</option>
+    <option value="multi4">カラフルD（あお始まり）</option>
     <option value="amber">アンバー</option>
     <option value="blue">ブルー</option>
     <option value="mint">ミント</option>
@@ -85,7 +88,7 @@
   <label>テンポ</label>
   <select id="tempo"><option value="1" selected>1秒（速）</option><option value="2">2秒（ゆっくり・見せ場）</option></select>
   <label>文字配置（動く）</label>
-  <select id="textPlace"><option value="bottom" selected>下</option><option value="top">上</option><option value="left">左・縦書き</option><option value="right">右・縦書き</option><option value="bl">左下（サブ風）</option><option value="br">右下（サブ風）</option><option value="ml">左なか</option><option value="mr">右なか</option></select>
+  <select id="textPlace"><option value="bottom" selected>下</option><option value="top">上</option><option value="left">左・縦書き</option><option value="right">右・縦書き</option><option value="bl">左下（サブ風）</option><option value="knee">膝の高さ</option><option value="br">右下（サブ風）</option><option value="ml">左なか</option><option value="mr">右なか</option></select>
   <label>フォント</label>
   <select id="textFont"><option value="maru" selected>まる（M PLUS）</option><option value="pop">ポップ（Mochiy）</option><option value="zenmaru">太まる（Zen Maru）</option><option value="kaisei">デコル（Kaisei）</option><option value="daruma">だるまドロップ</option></select>
   <label>文字スタイル</label>
@@ -517,7 +520,11 @@ const PASTEL = [
   { fill: [183,140,255], dark: [133,95,205] }, { fill: [255,133,205], dark: [205,85,160] },
 ];
 function letterCol(colorKey, i) {
+  // multi variants rotate the pastel cycle so a whole set does not repeat
+  // the same colour order on every stamp (Oz: 並べたら飽きないかな)
   if (colorKey === "multi") return PASTEL[i % PASTEL.length];
+  const m = /^multi([2-6])$/.exec(colorKey);
+  if (m) { const off = Number(m[1]) - 1; return PASTEL[(i + off) % PASTEL.length]; }
   return COLORS[colorKey] || COLORS.pink;
 }
 function curFont(px) {
@@ -700,7 +707,7 @@ function drawTextFrame(ctx, text, colorKey, frameIdx, totalFrames, tsBounce, W, 
     });
     return;
   }
-  const POS = { bottom: [0.5, 0.845], top: [0.5, 0.16], bl: [0.27, 0.75], br: [0.73, 0.75], ml: [0.18, 0.52], mr: [0.82, 0.52] };
+  const POS = { bottom: [0.5, 0.845], knee: [0.5, 0.885], top: [0.5, 0.16], bl: [0.27, 0.75], br: [0.73, 0.75], ml: [0.18, 0.52], mr: [0.82, 0.52] };
   const [fx, fy] = POS[place] || POS.bottom;
   const tilt = parseFloat((($("textTilt") || {}).value) || "0") * Math.PI / 180;
   const curve = parseInt((($("textCurve") || {}).value) || "0", 10);
@@ -1097,9 +1104,10 @@ function buildPoses(cols, useRim = true) {
       const winL = Math.round(cellW * 0.3);
       const rowL = new Int32Array(h2).fill(bxL), rowR = new Int32Array(h2).fill(bxR);
       for (let y = 0; y < h2; y++) {
-        // right boundary for this row
+        // right boundary for this row (the last figure has no neighbour
+        // on its right: never move its outer boundary inward)
         let rBound = bxR;
-        {
+        if (i < cells.length - 1) {
           let best = null;
           let x = Math.max(0, bxR - winL);
           const xEnd = Math.min(SW - 1, bxR + winL);
@@ -1117,9 +1125,9 @@ function buildPoses(cols, useRim = true) {
           }
           if (best) rBound = Math.min(bxR, Math.round(best.c));
         }
-        // left boundary for this row (mirror)
+        // left boundary for this row (mirror; first figure: no neighbour)
         let lBound = bxL;
-        {
+        if (i > 0) {
           let best = null;
           let x = Math.min(SW - 1, bxL + winL);
           const xEnd = Math.max(0, bxL - winL);
@@ -1182,7 +1190,7 @@ function buildPoses(cols, useRim = true) {
           for (let p = 0; p < w2 * h2 && !nearBoundary; p++) {
             if (!fin[p] || lf.lab[p] !== k) continue;
             const px = p % w2, py = (p / w2) | 0, gx = x0 + px;
-            if (Math.abs(gx - smL[py]) <= 6 || Math.abs(gx - smR[py]) <= 6) nearBoundary = true;
+            if (Math.abs(gx - smL[py]) <= 14 || Math.abs(gx - smR[py]) <= 14) nearBoundary = true;
           }
           if (nearBoundary) drop.add(k);
         }
