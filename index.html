@@ -22,7 +22,7 @@
 </style>
 </head>
 <body>
-<h1>🎀 スタンプ職人（Oz専用 v1.5.1）</h1>
+<h1>🎀 スタンプ職人（Oz専用 v1.6）</h1>
 <p class="small">シート／単体イラスト（文字なし）を読み込むと、切り分け → ふちなし透過 → 仕上げ → 書き出しまで自動。常時「高品質モード」：LINE仕様の上限いっぱいまで色数・解像度を自動で最大化します。</p>
 
 <div class="row">
@@ -715,6 +715,39 @@ function composeAnim(poses, mode) {
     const order = poses.map((_, i) => i).concat(poses.map((_, i) => poses.length - 1 - i));
     const per = Math.floor(1000 / order.length);
     order.forEach((pi, i) => plan.push({ pi, dur: (i === order.length - 1 ? 1000 - per * (order.length - 1) : per) * tempoMul, lift: 0, sy: 1.0, ts: 1.0 }));
+  }
+  // 1.5) ease mode: resample the keyframe track so the BODY glides (game-style tween);
+  // pose drawings still cut at segment boundaries, lift/squash are interpolated smoothly.
+  if (timingMode === "ease" && plan.length >= 2) {
+    const total = plan.reduce((a, f) => a + f.dur, 0);
+    const N = Math.min(20, Math.max(plan.length, Math.round(total / 100)));
+    const starts = []; let acc = 0;
+    plan.forEach(f => { starts.push(acc); acc += f.dur; });
+    const centers = plan.map((f, i) => starts[i] + f.dur / 2);
+    const smooth = t => t * t * (3 - 2 * t);
+    const sampled = [];
+    for (let i = 0; i < N; i++) {
+      const t = (i + 0.5) * total / N;
+      let ki = 0;
+      for (let k = 0; k < plan.length; k++) if (t >= starts[k]) ki = k;
+      let a = plan[ki], b = plan[ki], f = 0;
+      if (t < centers[ki]) {
+        b = plan[ki]; a = plan[Math.max(0, ki - 1)];
+        const span = centers[ki] - (ki > 0 ? centers[ki - 1] : 0);
+        f = span > 0 ? smooth(Math.min(1, Math.max(0, (t - (ki > 0 ? centers[ki - 1] : 0)) / span))) : 1;
+        if (ki === 0) f = 1;
+      } else {
+        a = plan[ki]; b = plan[Math.min(plan.length - 1, ki + 1)];
+        const span = (ki + 1 < plan.length ? centers[ki + 1] : total) - centers[ki];
+        f = span > 0 ? smooth(Math.min(1, Math.max(0, (t - centers[ki]) / span))) : 0;
+        if (ki === plan.length - 1) f = 0;
+      }
+      const L = (x, y) => x + (y - x) * f;
+      sampled.push({ pi: plan[ki].pi, dur: 0, lift: L(a.lift, b.lift), sy: L(a.sy, b.sy), ts: L(a.ts, b.ts) });
+    }
+    const per = Math.floor(total / N / 10) * 10;
+    sampled.forEach((f, i) => { f.dur = i === N - 1 ? total - per * (N - 1) : per; });
+    plan.length = 0; plan.push(...sampled);
   }
   // 2) char-first layout: character fills the frame; text overlays (never over the face zone)
   let ground, heightCap, charCx = M.w / 2;
