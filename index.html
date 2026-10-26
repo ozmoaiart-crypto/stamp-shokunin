@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>うごくスタンプ職人（Oz専用）</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@800&display=swap" rel="stylesheet">
+<style>
+  body { font-family: sans-serif; margin: 16px; background: #17181c; color: #eee; }
+  h1 { font-size: 18px; }
+  .row { margin: 10px 0; }
+  label { font-size: 13px; margin-right: 6px; }
+  input[type=text], select, textarea { font-size: 15px; padding: 6px; border-radius: 6px; border: 1px solid #555; background:#222; color:#eee; }
+  button { font-size: 15px; padding: 9px 14px; border-radius: 8px; border: 0; background: #ff6fa5; color: #fff; font-weight: bold; margin: 4px 4px 4px 0; }
+  button.sub { background: #3a3f4a; }
+  #preview { background: repeating-conic-gradient(#2c2f36 0% 25%, #23252b 0% 50%) 0 0/24px 24px; border-radius: 8px; max-width: 100%; }
+  #log { font-size: 12px; color: #9fd49f; white-space: pre-wrap; }
+  textarea { width: 100%; height: 64px; }
+  .small { font-size: 12px; color: #aaa; }
+  .mode-note { font-size: 12px; color: #ffd479; }
+</style>
+</head>
+<body>
+<h1>🎀 スタンプ職人（Oz専用 v1.1）</h1>
+<p class="small">シート／単体イラスト（文字なし）を読み込むと、切り分け → ふちなし透過 → 仕上げ → 書き出しまで自動。常時「高品質モード」：LINE仕様の上限いっぱいまで色数・解像度を自動で最大化します。</p>
+
+<div class="row">
+  <label>モード</label>
+  <select id="mode">
+    <option value="anim" selected>うごくスタンプ（320×270）</option>
+    <option value="stamp">静止スタンプ ふちなし（370×320）</option>
+    <option value="emoji">絵文字 静止（180×180）</option>
+    <option value="animemoji">絵文字 うごく（180×180／300KB）</option>
+  </select>
+  <span class="mode-note" id="modeNote"></span>
+</div>
+<div class="row">
+  <label>画像</label><input type="file" id="file" accept="image/*">
+</div>
+<div class="row">
+  <label>ポーズ数（横）</label>
+  <select id="cols">
+    <option value="1">1（単体）</option>
+    <option value="3">3</option>
+    <option value="5" selected>5</option>
+  </select>
+  <label>使うポーズ</label>
+  <select id="poseSel">
+    <option value="0">1</option><option value="1">2</option><option value="2" selected>3</option>
+    <option value="3">4</option><option value="4">5</option>
+  </select>
+  <span class="small">（静止モード用）</span>
+</div>
+<div class="row">
+  <label>文字</label><input type="text" id="text" value="わ〜い！" size="10">
+  <label>文字色</label>
+  <select id="color">
+    <option value="pink" selected>ピンク</option>
+    <option value="amber">アンバー</option>
+    <option value="blue">ブルー</option>
+    <option value="mint">ミント</option>
+    <option value="lavender">ラベンダー</option>
+  </select>
+  <label>文字位置（静止）</label>
+  <select id="textPos">
+    <option value="bottom" selected>下</option>
+    <option value="top">上</option>
+    <option value="none">なし</option>
+  </select>
+</div>
+<div class="row">
+  <label>再生</label>
+  <select id="plays"><option value="2" selected>1秒 × 2回</option><option value="1">1秒 × 1回</option></select>
+  <label><input type="checkbox" id="sparkle" checked> キラキラ</label>
+  <label><input type="checkbox" id="dither" checked> ディザ</label>
+</div>
+<div class="row">
+  <button id="build">▶ 作る</button>
+  <button id="dlMain2" class="sub" disabled>本体を保存</button>
+  <button id="dlExtra1" class="sub" disabled>メイン画像を保存</button>
+  <button id="dlExtra2" class="sub" disabled>タブ画像を保存</button>
+</div>
+<div class="row"><canvas id="preview" width="320" height="270"></canvas></div>
+<div class="row" id="log"></div>
+<div class="row">
+  <div class="small">レシピ（Museが作る指示書。貼って「読み込む」と設定が入ります）</div>
+  <textarea id="recipe"></textarea>
+  <button id="loadRecipe" class="sub">レシピを読み込む</button>
+  <button id="copyRecipe" class="sub">今の設定をレシピにする</button>
+</div>
+
+<script>
+"use strict";
+const COLORS = {
+  pink:     { fill: [255,130,180], dark: [203,62,118] },
+  amber:    { fill: [242,184,75],  dark: [201,143,38] },
+  blue:     { fill: [106,168,216], dark: [64,121,168] },
+  mint:     { fill: [99,185,149],  dark: [61,138,104] },
+  lavender: { fill: [180,142,222], dark: [134,99,179] },
+};
+const T5 = {
+  seq: [[0,120,0,1.00],[0,90,2,0.95],[1,60,-8,1.03],[2,120,-16,1.00],[2,100,-13,1.00],
+        [3,60,-6,1.00],[4,80,0,0.94],[4,90,0,1.00],[0,110,0,1.00],[0,90,1,0.98],[0,80,0,1.00]],
+  ts:  [1.00,1.02,1.06,1.12,1.10,1.05,1.08,1.03,1.00,1.00,1.00],
+};
+const T3 = {
+  seq: [[0,160,0,1.00],[1,140,-14,1.00],[2,200,-3,1.00],[2,200,-3,0.97],[0,140,0,1.00],[0,160,0,0.99]],
+  ts:  [1.00,1.08,1.12,1.06,1.00,1.00],
+};
+const MODES = {
+  anim:      { w: 320, h: 270, capKB: 950,  note: "うごくスタンプ：最大320×270／1MB／メインもAPNG" },
+  stamp:     { w: 370, h: 320, capKB: 950,  note: "静止スタンプ：最大370×320／1MB／ふちなし仕上げ" },
+  emoji:     { w: 180, h: 180, capKB: 950,  note: "絵文字（静止）：180×180／1MB／余白ほぼなし" },
+  animemoji: { w: 180, h: 180, capKB: 280,  note: "絵文字（うごく）：180×180／300KB上限に自動調整" },
+};
+let sheetImg = null;
+let built = null; // {kind:'anim'|'static', frames:[canvas], durations:[], mainCanvas, tabCanvas, still}
+let animTimer = null;
+
+const $ = id => document.getElementById(id);
+const log = m => { $("log").textContent += m + "\n"; };
+$("mode").addEventListener("change", () => { $("modeNote").textContent = MODES[$("mode").value].note; });
+$("modeNote").textContent = MODES.anim.note;
+
+/* ---------- flood labelling ---------- */
+function labelRegions(mask, w, h) {
+  const lab = new Int32Array(w * h).fill(-1);
+  let n = 0;
+  const stack = [];
+  for (let s = 0; s < w * h; s++) {
+    if (!mask[s] || lab[s] >= 0) continue;
+    lab[s] = n; stack.push(s);
+    while (stack.length) {
+      const p = stack.pop(), x = p % w, y = (p / w) | 0;
+      if (x > 0     && mask[p-1] && lab[p-1] < 0) { lab[p-1] = n; stack.push(p-1); }
+      if (x < w - 1 && mask[p+1] && lab[p+1] < 0) { lab[p+1] = n; stack.push(p+1); }
+      if (y > 0     && mask[p-w] && lab[p-w] < 0) { lab[p-w] = n; stack.push(p-w); }
+      if (y < h - 1 && mask[p+w] && lab[p+w] < 0) { lab[p+w] = n; stack.push(p+w); }
+    }
+    n++;
+  }
+  return { lab, n };
+}
+function edgeLabels(lab, w, h) {
+  const s = new Set();
+  for (let x = 0; x < w; x++) { s.add(lab[x]); s.add(lab[(h-1)*w+x]); }
+  for (let y = 0; y < h; y++) { s.add(lab[y*w]); s.add(lab[y*w+w-1]); }
+  s.delete(-1);
+  return s;
+}
+function minFilter(m, w, h) {
+  const o = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let v = 255;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const xx = x + dx, yy = y + dy;
+      if (xx < 0 || yy < 0 || xx >= w || yy >= h) { v = 0; continue; }
+      v = Math.min(v, m[yy * w + xx]);
+    }
+    o[y * w + x] = v;
+  }
+  return o;
+}
+function maxFilter(m, w, h) {
+  const o = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let v = 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const xx = x + dx, yy = y + dy;
+      if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+      v = Math.max(v, m[yy * w + xx]);
+    }
+    o[y * w + x] = v;
+  }
+  return o;
+}
+
+/* ---------- house cut (port of remove_bg) ---------- */
+function removeBg(imgData) {
+  const { data, width: w, height: h } = imgData;
+  const N = w * h;
+  const nw = new Uint8Array(N);
+  for (let i = 0; i < N; i++) nw[i] = (data[i*4] > 250 && data[i*4+1] > 250 && data[i*4+2] > 250) ? 1 : 0;
+  const { lab } = labelRegions(nw, w, h);
+  const edge = edgeLabels(lab, w, h);
+  let alpha = new Uint8Array(N);
+  for (let i = 0; i < N; i++) alpha[i] = (nw[i] && edge.has(lab[i])) ? 0 : 255;
+  const tmask = new Uint8Array(N);
+  for (let i = 0; i < N; i++) tmask[i] = alpha[i] === 0 ? 1 : 0;
+  const t = labelRegions(tmask, w, h);
+  const tedge = edgeLabels(t.lab, w, h);
+  for (let i = 0; i < N; i++) if (tmask[i] && !tedge.has(t.lab[i])) alpha[i] = 255;
+  alpha = maxFilter(minFilter(alpha, w, h), w, h);
+  alpha = minFilter(maxFilter(alpha, w, h), w, h);
+  alpha = minFilter(alpha, w, h);
+  const soft = new Uint8Array(N);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let s = 0, c = 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const xx = x + dx, yy = y + dy;
+      if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+      s += alpha[yy * w + xx]; c++;
+    }
+    soft[y * w + x] = s / c;
+  }
+  const out = new ImageData(new Uint8ClampedArray(data), w, h);
+  for (let i = 0; i < N; i++) out.data[i*4+3] = soft[i];
+  return out;
+}
+
+/* ---------- borderless rim strip ---------- */
+function stripRim(imgData, maxDepth = 60) {
+  const { data, width: w, height: h } = imgData;
+  const N = w * h;
+  const pass = new Uint8Array(N);
+  for (let i = 0; i < N; i++) {
+    if (data[i*4+3] <= 10) continue;
+    const r = data[i*4], g = data[i*4+1], b = data[i*4+2];
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    if (mn > 235 || ((mx - mn) <= 28 && mn >= 110)) pass[i] = 1;
+  }
+  const solid = new Uint8Array(N);
+  for (let i = 0; i < N; i++) solid[i] = data[i*4+3] > 10 ? 255 : 0;
+  const ero = minFilter(solid, w, h);
+  const dist = new Int32Array(N).fill(-1);
+  const q = [];
+  for (let i = 0; i < N; i++) if (solid[i] && !ero[i] && pass[i]) { dist[i] = 0; q.push(i); }
+  let head = 0;
+  while (head < q.length) {
+    const p = q[head++], d = dist[p];
+    if (d >= maxDepth) continue;
+    const x = p % w, y = (p / w) | 0;
+    const nb = [];
+    if (x > 0) nb.push(p - 1);
+    if (x < w - 1) nb.push(p + 1);
+    if (y > 0) nb.push(p - w);
+    if (y < h - 1) nb.push(p + w);
+    for (const npx of nb) if (dist[npx] < 0 && pass[npx]) { dist[npx] = d + 1; q.push(npx); }
+  }
+  const out = new ImageData(new Uint8ClampedArray(data), w, h);
+  for (let i = 0; i < N; i++) if (dist[i] >= 0) out.data[i*4+3] = 0;
+  return out;
+}
+
+function trimCanvas(src) {
+  const ctx = src.getContext("2d");
+  const { data, width: w, height: h } = ctx.getImageData(0, 0, src.width, src.height);
+  let minX = w, minY = h, maxX = -1, maxY = -1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (data[(y * w + x) * 4 + 3] > 10) {
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+    }
+  }
+  if (maxX < 0) return src;
+  const c = document.createElement("canvas");
+  c.width = maxX - minX + 1; c.height = maxY - minY + 1;
+  c.getContext("2d").drawImage(src, minX, minY, c.width, c.height, 0, 0, c.width, c.height);
+  return c;
+}
+function fitCanvas(src, maxW, maxH) {
+  const s = Math.min(maxW / src.width, maxH / src.height);
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(src.width * s));
+  c.height = Math.max(1, Math.round(src.height * s));
+  c.getContext("2d").drawImage(src, 0, 0, c.width, c.height);
+  return c;
+}
+
+/* ---------- palette ---------- */
+function buildPalette(imgDatas, maxColors) {
+  const samples = [];
+  for (const id of imgDatas) {
+    const d = id.data;
+    for (let i = 0; i < d.length; i += 4 * 7) {
+      if (d[i + 3] > 10) samples.push([d[i], d[i + 1], d[i + 2]]);
+    }
+  }
+  let boxes = [samples];
+  while (boxes.length < maxColors) {
+    let bi = -1, brange = -1, bch = 0;
+    boxes.forEach((box, i) => {
+      if (box.length < 2) return;
+      const mn = [255, 255, 255], mx = [0, 0, 0];
+      for (const px of box) for (let c = 0; c < 3; c++) {
+        if (px[c] < mn[c]) mn[c] = px[c];
+        if (px[c] > mx[c]) mx[c] = px[c];
+      }
+      for (let c = 0; c < 3; c++) if (mx[c] - mn[c] > brange) { brange = mx[c] - mn[c]; bi = i; bch = c; }
+    });
+    if (bi < 0) break;
+    const box = boxes.splice(bi, 1)[0];
+    box.sort((a, b) => a[bch] - b[bch]);
+    const mid = box.length >> 1;
+    boxes.push(box.slice(0, mid), box.slice(mid));
+  }
+  return boxes.filter(b => b.length).map(box => {
+    const s = [0, 0, 0];
+    for (const px of box) { s[0] += px[0]; s[1] += px[1]; s[2] += px[2]; }
+    return [Math.round(s[0] / box.length), Math.round(s[1] / box.length), Math.round(s[2] / box.length)];
+  });
+}
+function applyPalette(imgData, palette, dither) {
+  const { data, width: w, height: h } = imgData;
+  const cache = new Map();
+  const nearest = (r, g, b) => {
+    const key = (r << 16) | (g << 8) | b;
+    let v = cache.get(key);
+    if (v) return v;
+    let bd = 1e18;
+    for (const p of palette) {
+      const dr = r - p[0], dg = g - p[1], db = b - p[2];
+      const d = dr * dr + dg * dg + db * db;
+      if (d < bd) { bd = d; v = p; }
+    }
+    cache.set(key, v);
+    return v;
+  };
+  const err = new Float32Array(w * h * 4);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x, o = i * 4;
+    if (data[o + 3] <= 10) { data[o + 3] = 0; continue; }
+    let r = data[o] + (dither ? err[o] : 0);
+    let g = data[o + 1] + (dither ? err[o + 1] : 0);
+    let b = data[o + 2] + (dither ? err[o + 2] : 0);
+    r = Math.max(0, Math.min(255, r)); g = Math.max(0, Math.min(255, g)); b = Math.max(0, Math.min(255, b));
+    const p = nearest(r | 0, g | 0, b | 0);
+    data[o] = p[0]; data[o + 1] = p[1]; data[o + 2] = p[2];
+    if (dither) {
+      const er = r - p[0], eg = g - p[1], eb = b - p[2];
+      const spread = (dx, dy, f) => {
+        const xx = x + dx, yy = y + dy;
+        if (xx < 0 || yy < 0 || xx >= w || yy >= h) return;
+        const oo = (yy * w + xx) * 4;
+        err[oo] += er * f; err[oo + 1] += eg * f; err[oo + 2] += eb * f;
+      };
+      spread(1, 0, 7 / 16); spread(-1, 1, 3 / 16); spread(0, 1, 5 / 16); spread(1, 1, 1 / 16);
+    }
+  }
+  return imgData;
+}
+function quantizeCanvases(canvases, colors, dither) {
+  const ctxs = canvases.map(c => c.getContext("2d"));
+  const ids = ctxs.map((ctx, i) => ctx.getImageData(0, 0, canvases[i].width, canvases[i].height));
+  const palette = buildPalette(ids, colors);
+  const out = canvases.map((c, i) => {
+    const n = document.createElement("canvas");
+    n.width = c.width; n.height = c.height;
+    n.getContext("2d").putImageData(applyPalette(ids[i], palette, dither), 0, 0);
+    return n;
+  });
+  return out;
+}
+
+/* ---------- APNG writer ---------- */
+const CRC_TABLE = (() => {
+  const t = new Int32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c; }
+  return t;
+})();
+function crc32(bytes) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function chunk(type, data) {
+  const out = new Uint8Array(12 + data.length);
+  const dv = new DataView(out.buffer);
+  dv.setUint32(0, data.length);
+  for (let i = 0; i < 4; i++) out[4 + i] = type.charCodeAt(i);
+  out.set(data, 8);
+  dv.setUint32(8 + data.length, crc32(out.subarray(4, 8 + data.length)));
+  return out;
+}
+function parsePNG(buf) {
+  const u = new Uint8Array(buf);
+  let pos = 8, ihdr = null;
+  const idat = [];
+  while (pos < u.length) {
+    const len = new DataView(u.buffer, u.byteOffset + pos, 4).getUint32(0);
+    const type = String.fromCharCode(u[pos + 4], u[pos + 5], u[pos + 6], u[pos + 7]);
+    const d = u.subarray(pos + 8, pos + 8 + len);
+    if (type === "IHDR") ihdr = d;
+    if (type === "IDAT") idat.push(d);
+    pos += 12 + len;
+  }
+  return { ihdr, idat };
+}
+const canvasPNG = c => new Promise(res => c.toBlob(async b => res(await b.arrayBuffer()), "image/png"));
+async function buildAPNG(canvases, durations, plays) {
+  const bufs = [];
+  for (const c of canvases) bufs.push(await canvasPNG(c));
+  const parsed = bufs.map(parsePNG);
+  const parts = [new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])];
+  parts.push(chunk("IHDR", parsed[0].ihdr));
+  const ac = new Uint8Array(8);
+  new DataView(ac.buffer).setUint32(0, canvases.length);
+  new DataView(ac.buffer).setUint32(4, plays);
+  parts.push(chunk("acTL", ac));
+  let seq = 0;
+  for (let i = 0; i < canvases.length; i++) {
+    const p = parsed[i];
+    const fc = new Uint8Array(26), d = new DataView(fc.buffer);
+    d.setUint32(0, seq++);
+    d.setUint32(4, canvases[i].width);
+    d.setUint32(8, canvases[i].height);
+    d.setUint32(12, 0); d.setUint32(16, 0);
+    d.setUint16(20, durations[i]); d.setUint16(22, 1000);
+    d.setUint8(24, 1); d.setUint8(25, 0);
+    parts.push(chunk("fcTL", fc));
+    if (i === 0) {
+      for (const id of p.idat) parts.push(chunk("IDAT", id));
+    } else {
+      for (const id of p.idat) {
+        const fd = new Uint8Array(4 + id.length);
+        new DataView(fd.buffer).setUint32(0, seq++);
+        fd.set(id, 4);
+        parts.push(chunk("fdAT", fd));
+      }
+    }
+  }
+  parts.push(chunk("IEND", new Uint8Array(0)));
+  return new Blob(parts, { type: "image/png" });
+}
+/* ---------- drawing ---------- */
+function drawSparkles(ctx, frameIdx, ox, oy, s) {
+  const base = [[52, 60, 9], [268, 44, 7]];
+  const peak = [[44, 84, 12], [276, 66, 10], [250, 130, 7]];
+  const land = [[58, 150, 9], [262, 150, 8]];
+  const spots = (frameIdx === 3 || frameIdx === 4) ? peak : (frameIdx === 6 || frameIdx === 7) ? land : base;
+  ctx.fillStyle = "#ffc430"; ctx.strokeStyle = "#e89614"; ctx.lineWidth = 1;
+  for (const [cx, cy, r] of spots) {
+    const X0 = ox + cx * s, Y0 = oy + cy * s, R = r * s;
+    ctx.beginPath();
+    const pts = [[0, -1], [0.28, -0.28], [1, 0], [0.28, 0.28], [0, 1], [-0.28, 0.28], [-1, 0], [-0.28, -0.28]];
+    pts.forEach(([px, py], k) => {
+      const X = X0 + px * R, Y = Y0 + py * R;
+      if (k === 0) ctx.moveTo(X, Y); else ctx.lineTo(X, Y);
+    });
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+  }
+}
+function drawTextAt(ctx, text, colorKey, cx, cy, fontPx) {
+  const col = COLORS[colorKey] || COLORS.pink;
+  const fill = `rgb(${col.fill[0]},${col.fill[1]},${col.fill[2]})`;
+  const dark = `rgb(${col.dark[0]},${col.dark[1]},${col.dark[2]})`;
+  ctx.font = `800 ${fontPx}px "M PLUS Rounded 1c","Hiragino Maru Gothic ProN",sans-serif`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.lineJoin = "round";
+  const s = fontPx / 62;
+  ctx.strokeStyle = "#ffffff"; ctx.lineWidth = Math.max(2, Math.round(15 * s));
+  ctx.strokeText(text, cx, cy); ctx.fillStyle = "#ffffff"; ctx.fillText(text, cx, cy);
+  ctx.strokeStyle = dark; ctx.lineWidth = Math.max(1, Math.round(6 * s));
+  ctx.strokeText(text, cx, cy);
+  ctx.fillStyle = fill; ctx.fillText(text, cx, cy);
+}
+
+/* ---------- pose building (shared by all modes) ---------- */
+function buildPoses(cols) {
+  const sw = sheetImg.width, sh = sheetImg.height, pw = Math.floor(sw / cols);
+  const poses = [];
+  for (let i = 0; i < cols; i++) {
+    const c = document.createElement("canvas");
+    c.width = i < cols - 1 ? pw : sw - pw * (cols - 1);
+    c.height = sh;
+    const ctx = c.getContext("2d");
+    ctx.drawImage(sheetImg, i * pw, 0, c.width, sh, 0, 0, c.width, sh);
+    let id = ctx.getImageData(0, 0, c.width, sh);
+    id = removeBg(id);
+    const { data, width: w2, height: h2 } = id;
+    const solid = new Uint8Array(w2 * h2);
+    for (let p = 0; p < w2 * h2; p++) solid[p] = data[p * 4 + 3] > 10 ? 1 : 0;
+    const lr = labelRegions(solid, w2, h2);
+    const sizes = new Array(lr.n).fill(0);
+    for (let p = 0; p < w2 * h2; p++) if (solid[p]) sizes[lr.lab[p]]++;
+    let big = 0; for (let k = 1; k < lr.n; k++) if (sizes[k] > sizes[big]) big = k;
+    for (let p = 0; p < w2 * h2; p++) if (solid[p] && lr.lab[p] !== big) data[p * 4 + 3] = 0;
+    ctx.putImageData(id, 0, 0);
+    let trimmed = trimCanvas(c);
+    const tctx = trimmed.getContext("2d");
+    let tid = tctx.getImageData(0, 0, trimmed.width, trimmed.height);
+    tid = stripRim(tid);
+    tctx.putImageData(tid, 0, 0);
+    trimmed = trimCanvas(trimmed);
+    poses.push(trimmed);
+    log("ポーズ" + (i + 1) + ": " + trimmed.width + "×" + trimmed.height);
+  }
+  return poses;
+}
+
+function composeAnim(poses, mode) {
+  const M = MODES[mode];
+  const T = poses.length === 5 ? T5 : poses.length === 3 ? T3 : null;
+  const text = $("text").value || "";
+  const colorKey = $("color").value;
+  const useSparkle = $("sparkle").checked;
+  const maxPoseH = Math.max(...poses.map(p => p.height));
+  const stageH = M.h * 0.62; // character zone height
+  const scale = stageH / maxPoseH;
+  const scaled = poses.map(p => {
+    const c = document.createElement("canvas");
+    c.width = Math.round(p.width * scale); c.height = Math.round(p.height * scale);
+    c.getContext("2d").drawImage(p, 0, 0, c.width, c.height);
+    return c;
+  });
+  const ground = Math.round(M.h * 0.66);
+  const sRatio = M.w / 320;
+  const frames = [], durations = [];
+  const pushFrame = (poseIdx, dur, lift, sy, ts) => {
+    const c = document.createElement("canvas");
+    c.width = M.w; c.height = M.h;
+    const ctx = c.getContext("2d");
+    const img = scaled[poseIdx];
+    const hgt = Math.round(img.height * sy);
+    const x = Math.round((M.w - img.width) / 2);
+    const y = ground - hgt + Math.round(lift * sRatio);
+    ctx.drawImage(img, x, y, img.width, hgt);
+    if (useSparkle) drawSparkles(ctx, frames.length, 0, 0, sRatio);
+    if (text) drawTextAt(ctx, text, colorKey, M.w / 2, Math.round(M.h * 0.845), Math.round(62 * ts * sRatio));
+    frames.push(c); durations.push(dur);
+  };
+  if (T) {
+    T.seq.forEach(([pi, dur, lift, sy], i) => pushFrame(pi, dur, lift, sy, T.ts[i] || 1.0));
+  } else {
+    // generic cycle for other pose counts
+    const order = poses.map((_, i) => i).concat(poses.map((_, i) => poses.length - 1 - i));
+    const per = Math.floor(1000 / order.length);
+    order.forEach((pi, i) => pushFrame(pi, i === order.length - 1 ? 1000 - per * (order.length - 1) : per, 0, 1.0, 1.0));
+  }
+  return { frames, durations };
+}
+
+function composeStatic(poses, mode) {
+  const M = MODES[mode];
+  const pose = poses[Math.min(parseInt($("poseSel").value, 10), poses.length - 1)];
+  const text = $("text").value || "";
+  const colorKey = $("color").value;
+  const pos = $("textPos").value;
+  const c = document.createElement("canvas");
+  c.width = M.w; c.height = M.h;
+  const ctx = c.getContext("2d");
+  if (mode === "emoji") {
+    const fitted = fitCanvas(pose, M.w - 12, M.h - 12);
+    ctx.drawImage(fitted, Math.round((M.w - fitted.width) / 2), Math.round((M.h - fitted.height) / 2));
+  } else { // stamp 370x320
+    const hasText = text && pos !== "none";
+    const areaH = hasText ? M.h - 84 : M.h - 20;
+    const fitted = fitCanvas(pose, M.w - 20, areaH);
+    const y = pos === "top" && hasText ? 78 : Math.round((areaH - fitted.height) / 2) + 6;
+    ctx.drawImage(fitted, Math.round((M.w - fitted.width) / 2), y);
+    if (hasText) {
+      const cy = pos === "top" ? 40 : M.h - 42;
+      drawTextAt(ctx, text, colorKey, M.w / 2, cy, 54);
+    }
+  }
+  return c;
+}
+
+function makeMainTab(stillOrFrames, mode) {
+  // main: 240x240 (APNG for anim modes, PNG for static), tab: 96x74 static PNG
+  const src = Array.isArray(stillOrFrames) ? stillOrFrames : null;
+  const peak = src ? (src[3] || src[0]) : stillOrFrames;
+  const mainC = document.createElement("canvas");
+  mainC.width = 240; mainC.height = 240;
+  const fitted = fitCanvas(peak, 232, 232);
+  mainC.getContext("2d").drawImage(fitted, Math.round((240 - fitted.width) / 2), Math.round((240 - fitted.height) / 2));
+  const tabC = document.createElement("canvas");
+  tabC.width = 96; tabC.height = 74;
+  const tf = fitCanvas(peak, 92, 70);
+  tabC.getContext("2d").drawImage(tf, Math.round((96 - tf.width) / 2), Math.round((74 - tf.height) / 2));
+  return { mainC, tabC, mainFrames: src ? src.map(f => {
+    const o = document.createElement("canvas");
+    o.width = 240; o.height = 240;
+    const ff = fitCanvas(f, 232, 232);
+    o.getContext("2d").drawImage(ff, Math.round((240 - ff.width) / 2), Math.round((240 - ff.height) / 2));
+    return o;
+  }) : null };
+}
+
+/* ---------- build ---------- */
+$("file").addEventListener("change", e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const img = new Image();
+  img.onload = () => { sheetImg = img; log("画像を読み込みました: " + img.width + "×" + img.height); };
+  img.src = URL.createObjectURL(f);
+});
+
+$("build").addEventListener("click", async () => {
+  if (!sheetImg) { log("まず画像を選んでください"); return; }
+  $("log").textContent = "";
+  if (animTimer) { clearTimeout(animTimer); animTimer = null; }
+  if (document.fonts && document.fonts.ready) { try { await document.fonts.load('800 62px "M PLUS Rounded 1c"'); } catch (e) {} }
+  const mode = $("mode").value;
+  const cols = parseInt($("cols").value, 10);
+  const poses = buildPoses(cols);
+  if (mode === "anim" || mode === "animemoji") {
+    const { frames, durations } = composeAnim(poses, mode);
+    const { mainFrames, tabC } = makeMainTab(frames, mode);
+    built = { kind: "anim", mode, frames, durations, mainFrames, tabCanvas: tabC };
+    log("フレーム: " + frames.length + " / 合計 " + durations.reduce((a, b) => a + b, 0) + "ms");
+    playPreview(frames, durations);
+  } else {
+    const still = composeStatic(poses, mode);
+    const { mainC, tabC } = makeMainTab(still, mode);
+    built = { kind: "static", mode, still, mainCanvas: mainC, tabCanvas: tabC };
+    const pv = $("preview");
+    pv.width = still.width; pv.height = still.height;
+    const pctx = pv.getContext("2d");
+    pctx.clearRect(0, 0, pv.width, pv.height);
+    pctx.drawImage(still, 0, 0);
+    log("静止画: " + still.width + "×" + still.height);
+  }
+  $("dlMain2").disabled = false; $("dlExtra1").disabled = false; $("dlExtra2").disabled = false;
+  log("完成しました。下のボタンから保存できます。");
+});
+
+function playPreview(frames, durations) {
+  const pv = $("preview");
+  pv.width = frames[0].width; pv.height = frames[0].height;
+  const ctx = pv.getContext("2d");
+  let i = 0;
+  const step = () => {
+    ctx.clearRect(0, 0, pv.width, pv.height);
+    ctx.drawImage(frames[i], 0, 0);
+    const d = durations[i];
+    i = (i + 1) % frames.length;
+    animTimer = setTimeout(step, d);
+  };
+  step();
+}
+
+/* ---------- export with high-quality auto step-down ---------- */
+function download(blob, name) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+async function exportAnimAuto(frames, durations, capKB, plays) {
+  const dither = $("dither").checked;
+  for (const colors of [256, 128, 64, 32]) {
+    const q = quantizeCanvases(frames, colors, dither);
+    const blob = await buildAPNG(q, durations, plays);
+    log("書き出し試行: " + colors + "色 → " + Math.round(blob.size / 1024) + "KB");
+    if (blob.size <= capKB * 1024 || colors === 32) {
+      log("採用: " + colors + "色 / " + Math.round(blob.size / 1024) + "KB（上限 " + capKB + "KB）");
+      return blob;
+    }
+  }
+}
+async function exportStaticAuto(canvas, capKB) {
+  let blob = await canvasPNG(canvas).then(b => new Blob([b], { type: "image/png" }));
+  log("書き出し試行: フルカラー → " + Math.round(blob.size / 1024) + "KB");
+  if (blob.size <= capKB * 1024) return blob;
+  const q = quantizeCanvases([canvas], 256, $("dither").checked)[0];
+  blob = await canvasPNG(q).then(b => new Blob([b], { type: "image/png" }));
+  log("256色 → " + Math.round(blob.size / 1024) + "KB");
+  return blob;
+}
+$("dlMain2").addEventListener("click", async () => {
+  if (!built) return;
+  const plays = parseInt($("plays").value, 10);
+  if (built.kind === "anim") {
+    const blob = await exportAnimAuto(built.frames, built.durations, MODES[built.mode].capKB, plays);
+    download(blob, built.mode === "animemoji" ? "emoji.png" : "stamp.png");
+  } else {
+    const blob = await exportStaticAuto(built.still, MODES[built.mode].capKB);
+    download(blob, built.mode === "emoji" ? "emoji.png" : "stamp.png");
+  }
+});
+$("dlExtra1").addEventListener("click", async () => {
+  if (!built) return;
+  if (built.kind === "anim") {
+    const plays = parseInt($("plays").value, 10);
+    const blob = await exportAnimAuto(built.mainFrames, built.durations, MODES[built.mode].capKB, plays);
+    download(blob, "main.png");
+  } else {
+    const blob = await exportStaticAuto(built.mainCanvas, MODES[built.mode].capKB);
+    download(blob, "main.png");
+  }
+});
+$("dlExtra2").addEventListener("click", async () => {
+  if (!built) return;
+  built.tabCanvas.toBlob(b => download(b, "tab.png"), "image/png");
+});
+
+/* ---------- recipe ---------- */
+function currentRecipe() {
+  return { mode: $("mode").value, cols: $("cols").value, pose: $("poseSel").value,
+           text: $("text").value, color: $("color").value, textPos: $("textPos").value,
+           plays: $("plays").value, sparkle: $("sparkle").checked };
+}
+$("copyRecipe").addEventListener("click", () => { $("recipe").value = JSON.stringify(currentRecipe()); });
+$("loadRecipe").addEventListener("click", () => {
+  try {
+    const r = JSON.parse($("recipe").value);
+    if (r.mode) { $("mode").value = r.mode; $("modeNote").textContent = MODES[r.mode].note; }
+    if (r.cols) $("cols").value = r.cols;
+    if (r.pose !== undefined) $("poseSel").value = r.pose;
+    if (r.text !== undefined) $("text").value = r.text;
+    if (r.color) $("color").value = r.color;
+    if (r.textPos) $("textPos").value = r.textPos;
+    if (r.plays) $("plays").value = r.plays;
+    if (r.sparkle !== undefined) $("sparkle").checked = !!r.sparkle;
+    log("レシピを読み込みました。「作る」を押してください。");
+  } catch (e) { log("レシピの形式が違います"); }
+});
+if (location.hash.startsWith("#r=")) {
+  try {
+    const r = JSON.parse(decodeURIComponent(escape(atob(location.hash.slice(3)))));
+    $("recipe").value = JSON.stringify(r);
+    $("loadRecipe").click();
+  } catch (e) {}
+}
+</script>
+</body>
+</html>
