@@ -22,7 +22,7 @@
 </style>
 </head>
 <body>
-<h1>🎀 スタンプ職人（Oz専用 v2.1.1）</h1>
+<h1>🎀 スタンプ職人（Oz専用 v2.2.1）</h1>
 <p class="small">シート／単体イラスト（文字なし）を読み込むと、切り分け → ふちなし透過 → 仕上げ → 書き出しまで自動。常時「高品質モード」：LINE仕様の上限いっぱいまで色数・解像度を自動で最大化します。</p>
 
 <div class="row">
@@ -64,6 +64,7 @@
   <label>文字色</label>
   <select id="color">
     <option value="pink" selected>ピンク</option>
+    <option value="multi">カラフル（1文字ずつ）</option>
     <option value="amber">アンバー</option>
     <option value="blue">ブルー</option>
     <option value="mint">ミント</option>
@@ -84,17 +85,19 @@
   <label>テンポ</label>
   <select id="tempo"><option value="1" selected>1秒（速）</option><option value="2">2秒（ゆっくり・見せ場）</option></select>
   <label>文字配置（動く）</label>
-  <select id="textPlace"><option value="bottom" selected>下</option><option value="top">上</option><option value="left">左・縦書き</option><option value="bl">左下（サブ風）</option><option value="br">右下（サブ風）</option><option value="ml">左なか</option><option value="mr">右なか</option></select>
+  <select id="textPlace"><option value="bottom" selected>下</option><option value="top">上</option><option value="left">左・縦書き</option><option value="right">右・縦書き</option><option value="bl">左下（サブ風）</option><option value="br">右下（サブ風）</option><option value="ml">左なか</option><option value="mr">右なか</option></select>
   <label>フォント</label>
   <select id="textFont"><option value="maru" selected>まる（M PLUS）</option><option value="pop">ポップ（Mochiy）</option><option value="zenmaru">太まる（Zen Maru）</option><option value="kaisei">デコル（Kaisei）</option><option value="daruma">だるまドロップ</option></select>
   <label>文字スタイル</label>
-  <select id="textStyle"><option value="flat" selected>通常</option><option value="grad">グラデ</option><option value="shadow">かげ強め</option></select>
+  <select id="textStyle"><option value="flat" selected>通常</option><option value="grad">グラデ</option><option value="shine">光沢グラデ</option><option value="shadow">かげ強め</option><option value="3d">立体3D</option><option value="neon">ネオン</option><option value="plate">シール台紙</option></select>
   <label>傾き</label>
   <select id="textTilt"><option value="0" selected>なし</option><option value="-8">左上がり -8°</option><option value="8">右上がり +8°</option><option value="-14">左上がり -14°</option><option value="14">右上がり +14°</option></select>
   <label>カーブ</label>
-  <select id="textCurve"><option value="0" selected>なし</option><option value="1">ゆるアーチ</option><option value="2">アーチ強</option><option value="-1">スマイル</option></select>
+  <select id="textCurve"><option value="0" selected>なし</option><option value="1">ゆるアーチ</option><option value="2">アーチ強</option><option value="-1">スマイル</option><option value="3">ウェーブ</option></select>
+  <label>飾り</label>
+  <select id="textDeco"><option value="none" selected>なし</option><option value="star">星</option><option value="heart">ハート</option><option value="sparkle">キラキラ</option><option value="flower">お花</option></select>
   <label>文字アニメ</label>
-  <select id="textAnim"><option value="bounce" selected>全体バウンス</option><option value="seq">1文字ずつ出現</option><option value="type">タイピング（あ→あり→ありがとう）</option><option value="fade">フェード</option><option value="fixed">固定</option></select>
+  <select id="textAnim"><option value="bounce" selected>全体バウンス</option><option value="seq">1文字ずつ出現</option><option value="type">タイピング（あ→あり→ありがとう）</option><option value="fade">フェード</option><option value="fixed">固定</option><option value="wave">ウェーブバウンス</option></select>
   <label>刻み</label>
   <select id="timing"><option value="ease" selected>緩急</option><option value="uniform">均等（ヌルヌル）</option><option value="hold">ホールド（往復＋溜め）</option><option value="soft">出入りゆっくり（往復シート向け）</option></select>
   <label>1枚絵モーション</label>
@@ -508,12 +511,32 @@ const TEXT_FONTS = {
   kaisei: px => `700 ${px}px "Kaisei Decol","M PLUS Rounded 1c",serif`,
   daruma: px => `${px}px "Darumadrop One","M PLUS Rounded 1c",sans-serif`,
 };
+const PASTEL = [
+  { fill: [255,120,150], dark: [205,70,105] }, { fill: [255,178,84], dark: [207,133,40] },
+  { fill: [120,205,130], dark: [70,155,85] }, { fill: [96,172,255], dark: [55,120,200] },
+  { fill: [183,140,255], dark: [133,95,205] }, { fill: [255,133,205], dark: [205,85,160] },
+];
+function letterCol(colorKey, i) {
+  if (colorKey === "multi") return PASTEL[i % PASTEL.length];
+  return COLORS[colorKey] || COLORS.pink;
+}
 function curFont(px) {
   const f = TEXT_FONTS[($("textFont") || {}).value || "maru"] || TEXT_FONTS.maru;
   return f(px);
 }
 function fillFor(ctx, col, y, fontPx) {
   const style = ($("textStyle") || {}).value || "flat";
+  if (style === "shine") {
+    const g = ctx.createLinearGradient(0, y - fontPx * 0.6, 0, y + fontPx * 0.6);
+    const lite = col.fill.map(v => Math.round(v + (255 - v) * 0.7));
+    const mid = col.fill.map(v => Math.round(v + (255 - v) * 0.35));
+    g.addColorStop(0, `rgb(${lite[0]},${lite[1]},${lite[2]})`);
+    g.addColorStop(0.42, `rgb(${col.fill[0]},${col.fill[1]},${col.fill[2]})`);
+    g.addColorStop(0.55, `rgb(${mid[0]},${mid[1]},${mid[2]})`);
+    g.addColorStop(0.68, `rgb(${col.fill[0]},${col.fill[1]},${col.fill[2]})`);
+    g.addColorStop(1, `rgb(${col.dark[0]},${col.dark[1]},${col.dark[2]})`);
+    return g;
+  }
   if (style === "grad") {
     const g = ctx.createLinearGradient(0, y - fontPx * 0.6, 0, y + fontPx * 0.6);
     const lite = col.fill.map(v => Math.round(v + (255 - v) * 0.55));
@@ -551,23 +574,98 @@ function drawTextAt(ctx, text, colorKey, cx, cy, fontPx) {
 
 
 /* ---------- text with placement & animation (v1.3) ---------- */
-function drawPuffy(ctx, ch, colorKey, x, y, fontPx, scaleF, alpha) {
-  const col = COLORS[colorKey] || COLORS.pink;
+function drawPuffy(ctx, ch, colorKey, x, y, fontPx, scaleF, alpha, colObj) {
+  const col = colObj || COLORS[colorKey] || COLORS.pink;
   const fill = `rgb(${col.fill[0]},${col.fill[1]},${col.fill[2]})`;
   const dark = `rgb(${col.dark[0]},${col.dark[1]},${col.dark[2]})`;
+  const style = ($("textStyle") || {}).value || "flat";
   ctx.save();
   ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
   ctx.translate(x, y); ctx.scale(scaleF, scaleF); ctx.translate(-x, -y);
   ctx.font = curFont(fontPx);
   ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineJoin = "round";
   const s = fontPx / 62;
+  if (style === "3d") {
+    ctx.fillStyle = dark;
+    for (let o = 6; o >= 1; o--) ctx.fillText(ch, x + o * 1.5 * s, y + o * 1.5 * s);
+    ctx.strokeStyle = dark; ctx.lineWidth = Math.max(1, Math.round(5 * s));
+    ctx.strokeText(ch, x, y);
+    ctx.fillStyle = fillFor(ctx, col, y, fontPx); ctx.fillText(ch, x, y);
+    ctx.restore();
+    return;
+  }
+  if (style === "neon") {
+    ctx.shadowColor = fill; ctx.shadowBlur = Math.max(4, 15 * s);
+    ctx.strokeStyle = fill; ctx.lineWidth = Math.max(2, Math.round(8 * s));
+    ctx.strokeText(ch, x, y); ctx.strokeText(ch, x, y);
+    ctx.shadowColor = "transparent"; ctx.shadowBlur = 0;
+    const tint = col.fill.map(v => Math.round(v + (255 - v) * 0.72));
+    ctx.fillStyle = `rgb(${tint[0]},${tint[1]},${tint[2]})`;
+    ctx.fillText(ch, x, y);
+    ctx.restore();
+    return;
+  }
+  const rim = style === "plate" ? "#fffdf6" : "#ffffff";
   applyTextShadow(ctx, fontPx);
-  ctx.strokeStyle = "#ffffff"; ctx.lineWidth = Math.max(2, Math.round(15 * s));
-  ctx.strokeText(ch, x, y); ctx.fillStyle = "#ffffff"; ctx.fillText(ch, x, y);
+  ctx.strokeStyle = rim; ctx.lineWidth = Math.max(2, Math.round(15 * s));
+  ctx.strokeText(ch, x, y); ctx.fillStyle = rim; ctx.fillText(ch, x, y);
   clearTextShadow(ctx);
   ctx.strokeStyle = dark; ctx.lineWidth = Math.max(1, Math.round(6 * s));
   ctx.strokeText(ch, x, y);
   ctx.fillStyle = fillFor(ctx, col, y, fontPx); ctx.fillText(ch, x, y);
+  ctx.restore();
+}
+function drawDeco(ctx, kind, x, y, size, col, rot, alpha) {
+  const fill = `rgb(${col.fill[0]},${col.fill[1]},${col.fill[2]})`;
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+  ctx.translate(x, y); ctx.rotate(rot);
+  ctx.fillStyle = fill; ctx.strokeStyle = "#ffffff"; ctx.lineWidth = Math.max(1.5, size * 0.14); ctx.lineJoin = "round";
+  const r = size / 2;
+  ctx.beginPath();
+  if (kind === "star") {
+    for (let i = 0; i < 10; i++) {
+      const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.45 : r;
+      const px = Math.cos(a) * rr, py = Math.sin(a) * rr;
+      i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+    }
+    ctx.closePath();
+  } else if (kind === "sparkle") {
+    for (let i = 0; i < 8; i++) {
+      const a = i * Math.PI / 4, rr = i % 2 ? r * 0.18 : r;
+      const px = Math.cos(a) * rr, py = Math.sin(a) * rr;
+      i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+    }
+    ctx.closePath();
+  } else if (kind === "heart") {
+    ctx.moveTo(0, r * 0.85);
+    ctx.bezierCurveTo(-r * 1.15, -r * 0.1, -r * 0.62, -r * 0.95, 0, -r * 0.38);
+    ctx.bezierCurveTo(r * 0.62, -r * 0.95, r * 1.15, -r * 0.1, 0, r * 0.85);
+    ctx.closePath();
+  } else if (kind === "flower") {
+    for (let i = 0; i < 5; i++) {
+      const a = -Math.PI / 2 + i * Math.PI * 2 / 5;
+      ctx.moveTo(Math.cos(a) * r * 0.52 + r * 0.34, Math.sin(a) * r * 0.52);
+      ctx.arc(Math.cos(a) * r * 0.52, Math.sin(a) * r * 0.52, r * 0.34, 0, Math.PI * 2);
+    }
+  }
+  ctx.fill(); ctx.stroke();
+  if (kind === "flower") {
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.3, 0, Math.PI * 2);
+    ctx.fillStyle = "#fff3b0"; ctx.fill(); ctx.stroke();
+  }
+  ctx.restore();
+}
+function drawPlate(ctx, cx, cy, w, h, radius, colDark, alpha) {
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+  ctx.shadowColor = "rgba(30,20,50,0.25)"; ctx.shadowBlur = 8; ctx.shadowOffsetY = 3;
+  ctx.beginPath();
+  ctx.roundRect(cx - w / 2, cy - h / 2, w, h, radius);
+  ctx.fillStyle = "#fffdf6"; ctx.fill();
+  ctx.shadowColor = "transparent"; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  ctx.strokeStyle = colDark; ctx.lineWidth = Math.max(2, h * 0.045);
+  ctx.stroke();
   ctx.restore();
 }
 function drawTextFrame(ctx, text, colorKey, frameIdx, totalFrames, tsBounce, W, H, sRatio) {
@@ -586,14 +684,19 @@ function drawTextFrame(ctx, text, colorKey, frameIdx, totalFrames, tsBounce, W, 
     // final frame (Oz spec: 空欄→あ→あり→ありが→ありがとう)
     reveal = Math.min(letters.length, Math.floor((letters.length + 1) * frameIdx / Math.max(1, totalFrames)));
   }
-  if (place === "left") {
-    const x = W * 0.095;
+  if (place === "left" || place === "right") {
+    const x = place === "left" ? W * 0.095 : W * 0.905;
     const step = fontPx * 1.04;
     const y0 = H * 0.46 - step * (letters.length - 1) / 2;
+    const styleV = ($("textStyle") || {}).value || "flat";
+    if (styleV === "plate") {
+      const colD = letterCol(colorKey, 0);
+      drawPlate(ctx, x, H * 0.46, fontPx * 1.7, step * (letters.length - 1) + fontPx * 1.55, fontPx * 0.5, `rgb(${colD.dark[0]},${colD.dark[1]},${colD.dark[2]})`, alpha);
+    }
     letters.forEach((ch, i) => {
       if (i >= reveal) return;
       const pop = ((anim === "seq" || anim === "type") && i === reveal - 1 && frameIdx < totalFrames - 1) ? 1.16 : 1.0;
-      drawPuffy(ctx, ch, colorKey, x, y0 + step * i, fontPx, pop, alpha);
+      drawPuffy(ctx, ch, colorKey, x, y0 + step * i, fontPx, pop, alpha, letterCol(colorKey, i));
     });
     return;
   }
@@ -612,16 +715,34 @@ function drawTextFrame(ctx, text, colorKey, frameIdx, totalFrames, tsBounce, W, 
   let x = cx - total / 2;
   ctx.save();
   if (tilt) { ctx.translate(cx, cy); ctx.rotate(tilt); ctx.translate(-cx, -cy); }
+  const styleH = ($("textStyle") || {}).value || "flat";
+  if (styleH === "plate") {
+    const colD = letterCol(colorKey, 0);
+    drawPlate(ctx, cx, cy, total + fontPx * 0.95, fontPx * 1.66, fontPx * 0.55, `rgb(${colD.dark[0]},${colD.dark[1]},${colD.dark[2]})`, alpha);
+  }
+  const phase = totalFrames > 0 ? frameIdx / totalFrames : 0;
   letters.forEach((ch, i) => {
     const lx = x + widths[i] / 2; x += widths[i];
     if (i >= reveal) return;
     const t = letters.length > 1 ? (i - (letters.length - 1) / 2) / ((letters.length - 1) / 2) : 0;
-    const dy = -curve * fontPx * 0.16 * (1 - t * t);
+    let dy = curve === 3 ? Math.sin(i * 1.15) * fontPx * 0.10 : -curve * fontPx * 0.16 * (1 - t * t);
     let sc = 1.0;
     if (anim === "bounce") sc = tsBounce;
     else if ((anim === "seq" || anim === "type") && i === reveal - 1 && frameIdx < totalFrames - 1) sc = 1.16;
-    drawPuffy(ctx, ch, colorKey, lx, cy + dy, fontPx, sc, alpha);
+    else if (anim === "wave") {
+      const hop = Math.sin(phase * Math.PI * 2 - i * 0.8);
+      sc = 1 + 0.09 * Math.max(0, hop);
+      dy += -Math.max(0, hop) * fontPx * 0.13;
+    }
+    drawPuffy(ctx, ch, colorKey, lx, cy + dy, fontPx, sc, alpha, letterCol(colorKey, i));
   });
+  const deco = ($("textDeco") || {}).value || "none";
+  if (deco !== "none" && reveal >= letters.length) {
+    const bobL = Math.sin(phase * Math.PI * 2) * fontPx * 0.05;
+    const bobR = Math.sin(phase * Math.PI * 2 + 2) * fontPx * 0.05;
+    drawDeco(ctx, deco, cx - total / 2 - fontPx * 0.40, cy - fontPx * 0.55 + bobL, fontPx * 0.62, letterCol(colorKey, 1), -0.15, alpha);
+    drawDeco(ctx, deco, cx + total / 2 + fontPx * 0.40, cy - fontPx * 0.55 + bobR, fontPx * 0.62, letterCol(colorKey, letters.length), 0.15, alpha);
+  }
   ctx.restore();
 }
 
@@ -824,6 +945,12 @@ function buildPoses(cols, useRim = true) {
       rS += pd[i]; gS += pd[i + 1]; bS += pd[i + 2]; cnt++;
     }
     bgNearWhite = (rS / cnt >= 245 && gS / cnt >= 245 && bS / cnt >= 245);
+    const inkAll = new Uint8Array(sw * sh);
+    for (let p = 0; p < sw * sh; p++) {
+      const dd = Math.abs(pd[p * 4] - 255) + Math.abs(pd[p * 4 + 1] - 255) + Math.abs(pd[p * 4 + 2] - 255);
+      inkAll[p] = dd > 60 ? 1 : 0;
+    }
+    buildPoses._ink = inkAll;
   }
   let cells = null, cellsDetected = false;
   if ((($("cutMode") || {}).value || "auto") === "auto") cells = detectCells(cols);
@@ -852,7 +979,8 @@ function buildPoses(cols, useRim = true) {
     const lr = labelRegions(solid, w2, h2);
     const sizes = new Array(lr.n).fill(0);
     const sumX = new Array(lr.n).fill(0);
-    for (let p = 0; p < w2 * h2; p++) if (solid[p]) { sizes[lr.lab[p]]++; sumX[lr.lab[p]] += p % w2; }
+    const minXs = new Int32Array(lr.n).fill(w2), maxXs = new Int32Array(lr.n).fill(-1);
+    for (let p = 0; p < w2 * h2; p++) if (solid[p]) { sizes[lr.lab[p]]++; sumX[lr.lab[p]] += p % w2; const px = p % w2; if (px < minXs[lr.lab[p]]) minXs[lr.lab[p]] = px; if (px > maxXs[lr.lab[p]]) maxXs[lr.lab[p]] = px; }
     let big = 0; for (let k = 1; k < lr.n; k++) if (sizes[k] > sizes[big]) big = k;
     // keep the main component plus any sizeable part whose centre belongs to this
     // figure's own column (detached ears and accessories must survive; the
@@ -861,6 +989,10 @@ function buildPoses(cols, useRim = true) {
     const colL = cell.x - x0, colR = colL + cellW;
     for (let k = 1; k < lr.n; k++) {
       if (k === big || sizes[k] < Math.max(150, sizes[big] * 0.02)) continue;
+      // neighbour bleed: a detached part hugging the cell boundary (the next
+      // figure's fingertips/hair crossing in) is dropped even when its
+      // centre falls inside this cell and it floats near the body
+      if ((minXs[k] <= colL + 2 || maxXs[k] >= colR - 2) && sizes[k] < sizes[big] * 0.08) continue;
       const cx = sumX[k] / sizes[k];
       if (cx >= colL - 4 && cx <= colR + 4) keep.add(k);
     }
@@ -890,12 +1022,171 @@ function buildPoses(cols, useRim = true) {
       }
       for (const [k, d] of minD) if (d > 10) keep.delete(k);
     }
+    // bridge cut v2: a neighbour touching the figure through a halo neck
+    // (the next figure's fingertips against her hair) is part of the MAIN
+    // component, so component rules cannot remove it. Erode twice to sever
+    // necks, decide survival on the eroded geometry (edge-hugging parts are
+    // the neighbour's; thin interior parts near the core are rescued),
+    // then dilate back onto the original mask.
+    {
+      const keptMask = new Uint8Array(w2 * h2);
+      for (let p = 0; p < w2 * h2; p++) if (solid[p] && keep.has(lr.lab[p])) keptMask[p] = 1;
+      const erode = (m) => {
+        const o = new Uint8Array(w2 * h2);
+        for (let y = 0; y < h2; y++) for (let x = 0; x < w2; x++) {
+          const p = y * w2 + x;
+          if (!m[p]) continue;
+          if (x > 0 && !m[p - 1]) continue;
+          if (x < w2 - 1 && !m[p + 1]) continue;
+          if (y > 0 && !m[p - w2]) continue;
+          if (y < h2 - 1 && !m[p + w2]) continue;
+          o[p] = 1;
+        }
+        return o;
+      };
+      const dilate = (m) => {
+        const o = new Uint8Array(w2 * h2);
+        for (let y = 0; y < h2; y++) for (let x = 0; x < w2; x++) {
+          const p = y * w2 + x;
+          if (!m[p]) continue;
+          o[p] = 1;
+          if (x > 0) o[p - 1] = 1; if (x < w2 - 1) o[p + 1] = 1;
+          if (y > 0) o[p - w2] = 1; if (y < h2 - 1) o[p + w2] = 1;
+        }
+        return o;
+      };
+      const er2 = erode(erode(keptMask));
+      const le = labelRegions(er2, w2, h2);
+      const eSize = new Array(le.n).fill(0), eSumX = new Array(le.n).fill(0);
+      const eMinX = new Int32Array(le.n).fill(w2), eMaxX = new Int32Array(le.n).fill(-1);
+      const overlapBig = new Array(le.n).fill(0);
+      for (let p = 0; p < w2 * h2; p++) if (er2[p]) { const k = le.lab[p]; eSize[k]++; eSumX[k] += p % w2; const px = p % w2; if (px < eMinX[k]) eMinX[k] = px; if (px > eMaxX[k]) eMaxX[k] = px; if (lr.lab[p] === big) overlapBig[k]++; }
+      let core = 0; for (let k = 1; k < le.n; k++) if (overlapBig[k] > overlapBig[core]) core = k;
+      const coreDil = dilate(dilate(dilate(le.lab.map((v, p) => v === core && er2[p] ? 1 : 0))));
+      const surv = new Set([core]);
+      for (let k = 1; k < le.n; k++) {
+        if (k === core) continue;
+        const edgeHug = (eMinX[k] <= colL + 2 || eMaxX[k] >= colR - 2);
+        if (edgeHug && eSize[k] < eSize[core] * 0.08) continue;
+        if (eSize[k] >= Math.max(150, eSize[core] * 0.02)) {
+          const cx = eSumX[k] / eSize[k];
+          if (cx >= colL - 4 && cx <= colR + 4) { surv.add(k); continue; }
+        }
+        // thin-neck rescue: a small interior part that was attached to the
+        // core by a thin neck (hair strand, glasses) survives
+        if (!edgeHug) {
+          let near = false;
+          for (let p = 0; p < w2 * h2 && !near; p++) if (er2[p] && le.lab[p] === k && coreDil[p]) near = true;
+          if (near) surv.add(k);
+        }
+      }
+      const survMask = new Uint8Array(w2 * h2);
+      for (let p = 0; p < w2 * h2; p++) if (er2[p] && surv.has(le.lab[p])) survMask[p] = 1;
+      const back = dilate(dilate(survMask));
+      for (let p = 0; p < w2 * h2; p++) if (solid[p] && !(keptMask[p] && back[p])) data[p * 4 + 3] = 0;
+    }
     for (let p = 0; p < w2 * h2; p++) if (solid[p] && !keep.has(lr.lab[p])) data[p * 4 + 3] = 0;
     // auto-detected cells partition the sheet: nothing outside the figure's
-    // own cell can belong to it (kills neighbour aprons bleeding into frame)
+    // own cell can belong to it. The boundary is not a straight line: in
+    // each row it follows the white channel (>=3px) beside the figure's own
+    // widest ink run near the straight boundary, so a neighbour's fingers
+    // reaching across the line stay on the neighbour's side.
     if (cellsDetected) {
-      for (let y = 0; y < h2; y++) for (let x = 0; x < w2; x++) {
-        if (x < colL || x > colR) data[(y * w2 + x) * 4 + 3] = 0;
+      const inkAll = buildPoses._ink, SW = sheetImg.width;
+      const bxL = cell.x, bxR = cell.x + cellW;
+      const winL = Math.round(cellW * 0.3);
+      const rowL = new Int32Array(h2).fill(bxL), rowR = new Int32Array(h2).fill(bxR);
+      for (let y = 0; y < h2; y++) {
+        // right boundary for this row
+        let rBound = bxR;
+        {
+          let best = null;
+          let x = Math.max(0, bxR - winL);
+          const xEnd = Math.min(SW - 1, bxR + winL);
+          while (x <= xEnd) {
+            if (inkAll[y * SW + x]) { x++; continue; }
+            let xe = x; while (xe <= xEnd && !inkAll[y * SW + xe]) xe++;
+            if (xe - x >= 3) {
+              // width of the ink run immediately left of this white run
+              let lw = 0, lx = x - 1;
+              while (lx >= 0 && inkAll[y * SW + lx]) { lw++; lx--; }
+              const centre = (x + xe - 1) / 2;
+              if (lw >= 40 && (!best || lw > best.lw || (lw === best.lw && Math.abs(centre - bxR) < Math.abs(best.c - bxR)))) best = { c: centre, lw };
+            }
+            x = xe;
+          }
+          if (best) rBound = Math.min(bxR, Math.round(best.c));
+        }
+        // left boundary for this row (mirror)
+        let lBound = bxL;
+        {
+          let best = null;
+          let x = Math.min(SW - 1, bxL + winL);
+          const xEnd = Math.max(0, bxL - winL);
+          while (x >= xEnd) {
+            if (inkAll[y * SW + x]) { x--; continue; }
+            let xe = x; while (xe >= xEnd && !inkAll[y * SW + xe]) xe--;
+            if (x - xe >= 3) {
+              let rw = 0, rx = x + 1;
+              while (rx < SW && inkAll[y * SW + rx]) { rw++; rx++; }
+              const centre = (x + xe + 1) / 2;
+              if (rw >= 40 && (!best || rw > best.lw || (rw === best.lw && Math.abs(centre - bxL) < Math.abs(best.c - bxL)))) best = { c: centre, lw: rw };
+            }
+            x = xe;
+          }
+          if (best) lBound = Math.max(bxL, Math.round(best.c));
+        }
+        rowL[y] = lBound; rowR[y] = rBound;
+      }
+      // median-smooth the boundary rows and slope-limit them (a smooth
+      // boundary cannot leave 1-row islands), then cut
+      const med = (arr, y, w) => {
+        const v = [];
+        for (let dy = -w; dy <= w; dy++) { const yy = y + dy; if (yy >= 0 && yy < h2) v.push(arr[yy]); }
+        v.sort((a, b) => a - b);
+        return v[v.length >> 1];
+      };
+      const smL = new Int32Array(h2), smR = new Int32Array(h2);
+      for (let y = 0; y < h2; y++) { smL[y] = med(rowL, y, 4); smR[y] = med(rowR, y, 4); }
+      for (let pass = 0; pass < 2; pass++) {
+        let prevL = smL[0], prevR = smR[0];
+        for (let y = 1; y < h2; y++) {
+          smL[y] = Math.max(prevL - 2, Math.min(prevL + 2, smL[y])); prevL = smL[y];
+          smR[y] = Math.max(prevR - 2, Math.min(prevR + 2, smR[y])); prevR = smR[y];
+        }
+        for (let y = h2 - 2; y >= 0; y--) {
+          smL[y] = Math.max(smL[y + 1] - 2, Math.min(smL[y + 1] + 2, smL[y]));
+          smR[y] = Math.max(smR[y + 1] - 2, Math.min(smR[y + 1] + 2, smR[y]));
+        }
+      }
+      for (let y = 0; y < h2; y++) {
+        for (let x = 0; x < w2; x++) {
+          const gx = x0 + x;
+          if (gx < smL[y] || gx > smR[y]) data[(y * w2 + x) * 4 + 3] = 0;
+        }
+      }
+      // post-mask prune: small fragments stranded along the boundary curve
+      // (sliced frill tips of either figure) are dropped; interior detached
+      // parts (sparkles, sweat) are untouched
+      {
+        const fin = new Uint8Array(w2 * h2);
+        for (let p = 0; p < w2 * h2; p++) fin[p] = data[p * 4 + 3] > 10 ? 1 : 0;
+        const lf = labelRegions(fin, w2, h2);
+        const fSize = new Array(lf.n).fill(0);
+        for (let p = 0; p < w2 * h2; p++) if (fin[p]) fSize[lf.lab[p]]++;
+        let fBig = 0; for (let k = 1; k < lf.n; k++) if (fSize[k] > fSize[fBig]) fBig = k;
+        const drop = new Set();
+        for (let k = 1; k < lf.n; k++) {
+          if (k === fBig || fSize[k] >= fSize[fBig] * 0.015) continue;
+          let nearBoundary = false;
+          for (let p = 0; p < w2 * h2 && !nearBoundary; p++) {
+            if (!fin[p] || lf.lab[p] !== k) continue;
+            const px = p % w2, py = (p / w2) | 0, gx = x0 + px;
+            if (Math.abs(gx - smL[py]) <= 6 || Math.abs(gx - smR[py]) <= 6) nearBoundary = true;
+          }
+          if (nearBoundary) drop.add(k);
+        }
+        if (drop.size) for (let p = 0; p < w2 * h2; p++) if (fin[p] && drop.has(lf.lab[p])) data[p * 4 + 3] = 0;
       }
     }
     ctx.putImageData(id, 0, 0);
@@ -1433,6 +1724,7 @@ function currentRecipe() {
            cutMode: ($("cutMode") || {}).value || "auto",
            textFont: ($("textFont") || {}).value || "maru", textStyle: ($("textStyle") || {}).value || "flat",
            textTilt: ($("textTilt") || {}).value || "0", textCurve: ($("textCurve") || {}).value || "0",
+           textDeco: ($("textDeco") || {}).value || "none",
            tone: ($("tone") || {}).value || "vivid", shadow: ($("shadow") || {}).value || "on" };
 }
 $("copyRecipe").addEventListener("click", () => { $("recipe").value = JSON.stringify(currentRecipe()); });
@@ -1464,6 +1756,7 @@ $("loadRecipe").addEventListener("click", () => {
     if (r.textStyle && $("textStyle")) $("textStyle").value = r.textStyle;
     if (r.textTilt && $("textTilt")) $("textTilt").value = r.textTilt;
     if (r.textCurve && $("textCurve")) $("textCurve").value = r.textCurve;
+    if (r.textDeco && $("textDeco")) $("textDeco").value = r.textDeco;
     if (r.sparkle !== undefined) $("sparkle").checked = !!r.sparkle;
     log("レシピを読み込みました。「作る」を押してください。");
   } catch (e) { log("レシピの形式が違います"); }
