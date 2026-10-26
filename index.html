@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>うごくスタンプ職人（Oz専用）</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@800&family=Mochiy+Pop+One&family=Zen+Maru+Gothic:wght@900&family=Kaisei+Decol:wght@700&family=Darumadrop+One&display=swap" rel="stylesheet">
 <style>
   body { font-family: sans-serif; margin: 16px; background: #17181c; color: #eee; }
   h1 { font-size: 18px; }
@@ -22,7 +22,7 @@
 </style>
 </head>
 <body>
-<h1>🎀 スタンプ職人（Oz専用 v2.0）</h1>
+<h1>🎀 スタンプ職人（Oz専用 v2.1）</h1>
 <p class="small">シート／単体イラスト（文字なし）を読み込むと、切り分け → ふちなし透過 → 仕上げ → 書き出しまで自動。常時「高品質モード」：LINE仕様の上限いっぱいまで色数・解像度を自動で最大化します。</p>
 
 <div class="row">
@@ -84,7 +84,15 @@
   <label>テンポ</label>
   <select id="tempo"><option value="1" selected>1秒（速）</option><option value="2">2秒（ゆっくり・見せ場）</option></select>
   <label>文字配置（動く）</label>
-  <select id="textPlace"><option value="bottom" selected>下</option><option value="top">上</option><option value="left">左・縦書き</option></select>
+  <select id="textPlace"><option value="bottom" selected>下</option><option value="top">上</option><option value="left">左・縦書き</option><option value="bl">左下（サブ風）</option><option value="br">右下（サブ風）</option><option value="ml">左なか</option><option value="mr">右なか</option></select>
+  <label>フォント</label>
+  <select id="textFont"><option value="maru" selected>まる（M PLUS）</option><option value="pop">ポップ（Mochiy）</option><option value="zenmaru">太まる（Zen Maru）</option><option value="kaisei">デコル（Kaisei）</option><option value="daruma">だるまドロップ</option></select>
+  <label>文字スタイル</label>
+  <select id="textStyle"><option value="flat" selected>通常</option><option value="grad">グラデ</option><option value="shadow">かげ強め</option></select>
+  <label>傾き</label>
+  <select id="textTilt"><option value="0" selected>なし</option><option value="-8">左上がり -8°</option><option value="8">右上がり +8°</option><option value="-14">左上がり -14°</option><option value="14">右上がり +14°</option></select>
+  <label>カーブ</label>
+  <select id="textCurve"><option value="0" selected>なし</option><option value="1">ゆるアーチ</option><option value="2">アーチ強</option><option value="-1">スマイル</option></select>
   <label>文字アニメ</label>
   <select id="textAnim"><option value="bounce" selected>全体バウンス</option><option value="seq">1文字ずつ出現</option><option value="type">タイピング（あ→あり→ありがとう）</option><option value="fade">フェード</option><option value="fixed">固定</option></select>
   <label>刻み</label>
@@ -493,19 +501,52 @@ function drawSparkles(ctx, frameIdx, ox, oy, s) {
     ctx.closePath(); ctx.fill(); ctx.stroke();
   }
 }
+const TEXT_FONTS = {
+  maru: px => `800 ${px}px "M PLUS Rounded 1c","Hiragino Maru Gothic ProN",sans-serif`,
+  pop: px => `${px}px "Mochiy Pop One","M PLUS Rounded 1c",sans-serif`,
+  zenmaru: px => `900 ${px}px "Zen Maru Gothic","M PLUS Rounded 1c",sans-serif`,
+  kaisei: px => `700 ${px}px "Kaisei Decol","M PLUS Rounded 1c",serif`,
+  daruma: px => `${px}px "Darumadrop One","M PLUS Rounded 1c",sans-serif`,
+};
+function curFont(px) {
+  const f = TEXT_FONTS[($("textFont") || {}).value || "maru"] || TEXT_FONTS.maru;
+  return f(px);
+}
+function fillFor(ctx, col, y, fontPx) {
+  const style = ($("textStyle") || {}).value || "flat";
+  if (style === "grad") {
+    const g = ctx.createLinearGradient(0, y - fontPx * 0.6, 0, y + fontPx * 0.6);
+    const lite = col.fill.map(v => Math.round(v + (255 - v) * 0.55));
+    g.addColorStop(0, `rgb(${lite[0]},${lite[1]},${lite[2]})`);
+    g.addColorStop(0.55, `rgb(${col.fill[0]},${col.fill[1]},${col.fill[2]})`);
+    g.addColorStop(1, `rgb(${col.dark[0]},${col.dark[1]},${col.dark[2]})`);
+    return g;
+  }
+  return `rgb(${col.fill[0]},${col.fill[1]},${col.fill[2]})`;
+}
+function applyTextShadow(ctx, fontPx) {
+  if ((($("textStyle") || {}).value || "flat") === "shadow") {
+    ctx.shadowColor = "rgba(30,20,50,0.45)";
+    ctx.shadowBlur = Math.max(2, fontPx * 0.12);
+    ctx.shadowOffsetY = Math.max(1, fontPx * 0.07);
+  }
+}
+function clearTextShadow(ctx) { ctx.shadowColor = "transparent"; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0; }
 function drawTextAt(ctx, text, colorKey, cx, cy, fontPx) {
   const col = COLORS[colorKey] || COLORS.pink;
   const fill = `rgb(${col.fill[0]},${col.fill[1]},${col.fill[2]})`;
   const dark = `rgb(${col.dark[0]},${col.dark[1]},${col.dark[2]})`;
-  ctx.font = `800 ${fontPx}px "M PLUS Rounded 1c","Hiragino Maru Gothic ProN",sans-serif`;
+  ctx.font = curFont(fontPx);
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.lineJoin = "round";
   const s = fontPx / 62;
+  applyTextShadow(ctx, fontPx);
   ctx.strokeStyle = "#ffffff"; ctx.lineWidth = Math.max(2, Math.round(15 * s));
   ctx.strokeText(text, cx, cy); ctx.fillStyle = "#ffffff"; ctx.fillText(text, cx, cy);
+  clearTextShadow(ctx);
   ctx.strokeStyle = dark; ctx.lineWidth = Math.max(1, Math.round(6 * s));
   ctx.strokeText(text, cx, cy);
-  ctx.fillStyle = fill; ctx.fillText(text, cx, cy);
+  ctx.fillStyle = fillFor(ctx, col, cy, fontPx); ctx.fillText(text, cx, cy);
 }
 
 
@@ -517,14 +558,16 @@ function drawPuffy(ctx, ch, colorKey, x, y, fontPx, scaleF, alpha) {
   ctx.save();
   ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
   ctx.translate(x, y); ctx.scale(scaleF, scaleF); ctx.translate(-x, -y);
-  ctx.font = `800 ${fontPx}px "M PLUS Rounded 1c","Hiragino Maru Gothic ProN",sans-serif`;
+  ctx.font = curFont(fontPx);
   ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineJoin = "round";
   const s = fontPx / 62;
+  applyTextShadow(ctx, fontPx);
   ctx.strokeStyle = "#ffffff"; ctx.lineWidth = Math.max(2, Math.round(15 * s));
   ctx.strokeText(ch, x, y); ctx.fillStyle = "#ffffff"; ctx.fillText(ch, x, y);
+  clearTextShadow(ctx);
   ctx.strokeStyle = dark; ctx.lineWidth = Math.max(1, Math.round(6 * s));
   ctx.strokeText(ch, x, y);
-  ctx.fillStyle = fill; ctx.fillText(ch, x, y);
+  ctx.fillStyle = fillFor(ctx, col, y, fontPx); ctx.fillText(ch, x, y);
   ctx.restore();
 }
 function drawTextFrame(ctx, text, colorKey, frameIdx, totalFrames, tsBounce, W, H, sRatio) {
@@ -538,39 +581,47 @@ function drawTextFrame(ctx, text, colorKey, frameIdx, totalFrames, tsBounce, W, 
   if (anim === "fade") alpha = Math.min(1, (frameIdx + 1) / Math.max(2, Math.round(totalFrames * 0.4)));
   let reveal = letters.length;
   if (anim === "seq") reveal = Math.max(1, Math.min(letters.length, Math.floor((frameIdx + 1) / totalFrames * (letters.length + 1))));
+  if (anim === "type") {
+    const done = Math.ceil(letters.length * Math.min(1, (frameIdx + 1) / Math.max(1, totalFrames) / 0.8));
+    reveal = Math.max(1, Math.min(letters.length, done));
+  }
   if (place === "left") {
     const x = W * 0.095;
     const step = fontPx * 1.04;
     const y0 = H * 0.46 - step * (letters.length - 1) / 2;
     letters.forEach((ch, i) => {
       if (i >= reveal) return;
-      const pop = (anim === "seq" && i === reveal - 1 && frameIdx < totalFrames - 1) ? 1.15 : 1.0;
+      const pop = ((anim === "seq" || anim === "type") && i === reveal - 1 && frameIdx < totalFrames - 1) ? 1.16 : 1.0;
       drawPuffy(ctx, ch, colorKey, x, y0 + step * i, fontPx, pop, alpha);
     });
     return;
   }
-  const cy = place === "top" ? H * 0.16 : H * 0.845;
-  if (anim === "seq" || anim === "type") {
-    // typing: the word builds up あ→あり→ありが… and completes by ~80%
-    if (anim === "type") {
-      const done = Math.ceil(letters.length * Math.min(1, (frameIdx + 1) / Math.max(1, totalFrames) / 0.8));
-      reveal = Math.max(1, Math.min(letters.length, done));
-    }
-    ctx.font = `800 ${fontPx}px "M PLUS Rounded 1c","Hiragino Maru Gothic ProN",sans-serif`;
-    const widths = letters.map(ch => ctx.measureText(ch).width);
-    const total = widths.reduce((a, b) => a + b, 0);
-    let x = W / 2 - total / 2;
-    letters.forEach((ch, i) => {
-      const cx = x + widths[i] / 2; x += widths[i];
-      if (i >= reveal) return;
-      const pop = (i === reveal - 1 && frameIdx < totalFrames - 1) ? 1.18 : 1.0;
-      drawPuffy(ctx, ch, colorKey, cx, cy, fontPx, pop, alpha);
-    });
-  } else {
-    ctx.save(); ctx.globalAlpha = alpha;
-    drawTextAt(ctx, text, colorKey, W / 2, cy, Math.round(fontPx * (anim === "bounce" ? tsBounce : 1.0)));
-    ctx.restore();
-  }
+  const POS = { bottom: [0.5, 0.845], top: [0.5, 0.16], bl: [0.27, 0.75], br: [0.73, 0.75], ml: [0.18, 0.52], mr: [0.82, 0.52] };
+  const [fx, fy] = POS[place] || POS.bottom;
+  const tilt = parseFloat((($("textTilt") || {}).value) || "0") * Math.PI / 180;
+  const curve = parseInt((($("textCurve") || {}).value) || "0", 10);
+  ctx.font = curFont(fontPx);
+  const widths = letters.map(ch => ctx.measureText(ch).width);
+  const total = widths.reduce((a, b) => a + b, 0);
+  // clamp the (possibly tilted) block inside the frame with a small margin
+  const halfW = Math.abs(Math.cos(tilt)) * total / 2 + Math.abs(Math.sin(tilt)) * fontPx / 2 + 4;
+  const halfH = Math.abs(Math.sin(tilt)) * total / 2 + Math.abs(Math.cos(tilt)) * fontPx / 2 + 4;
+  const cx = Math.min(Math.max(W * fx, halfW), W - halfW);
+  const cy = Math.min(Math.max(H * fy, halfH), H - halfH);
+  let x = cx - total / 2;
+  ctx.save();
+  if (tilt) { ctx.translate(cx, cy); ctx.rotate(tilt); ctx.translate(-cx, -cy); }
+  letters.forEach((ch, i) => {
+    const lx = x + widths[i] / 2; x += widths[i];
+    if (i >= reveal) return;
+    const t = letters.length > 1 ? (i - (letters.length - 1) / 2) / ((letters.length - 1) / 2) : 0;
+    const dy = -curve * fontPx * 0.16 * (1 - t * t);
+    let sc = 1.0;
+    if (anim === "bounce") sc = tsBounce;
+    else if ((anim === "seq" || anim === "type") && i === reveal - 1 && frameIdx < totalFrames - 1) sc = 1.16;
+    drawPuffy(ctx, ch, colorKey, lx, cy + dy, fontPx, sc, alpha);
+  });
+  ctx.restore();
 }
 
 /* ---------- GIF writer (preview, v1.3) ---------- */
@@ -1379,6 +1430,8 @@ function currentRecipe() {
            anchor: ($("anchor") || {}).value || "feet", lockLower: ($("lockLower") || {}).value || "off",
            lockDonor: ($("lockDonor") || {}).value || "0",
            cutMode: ($("cutMode") || {}).value || "auto",
+           textFont: ($("textFont") || {}).value || "maru", textStyle: ($("textStyle") || {}).value || "flat",
+           textTilt: ($("textTilt") || {}).value || "0", textCurve: ($("textCurve") || {}).value || "0",
            tone: ($("tone") || {}).value || "vivid", shadow: ($("shadow") || {}).value || "on" };
 }
 $("copyRecipe").addEventListener("click", () => { $("recipe").value = JSON.stringify(currentRecipe()); });
@@ -1406,6 +1459,10 @@ $("loadRecipe").addEventListener("click", () => {
     if (r.lockLower && $("lockLower")) $("lockLower").value = r.lockLower;
     if (r.lockDonor && $("lockDonor")) $("lockDonor").value = r.lockDonor;
     if (r.cutMode && $("cutMode")) $("cutMode").value = r.cutMode;
+    if (r.textFont && $("textFont")) $("textFont").value = r.textFont;
+    if (r.textStyle && $("textStyle")) $("textStyle").value = r.textStyle;
+    if (r.textTilt && $("textTilt")) $("textTilt").value = r.textTilt;
+    if (r.textCurve && $("textCurve")) $("textCurve").value = r.textCurve;
     if (r.sparkle !== undefined) $("sparkle").checked = !!r.sparkle;
     log("レシピを読み込みました。「作る」を押してください。");
   } catch (e) { log("レシピの形式が違います"); }
