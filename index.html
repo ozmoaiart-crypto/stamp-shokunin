@@ -22,7 +22,7 @@
 </style>
 </head>
 <body>
-<h1>🎀 スタンプ職人（Oz専用 v1.3.1）</h1>
+<h1>🎀 スタンプ職人（Oz専用 v1.4）</h1>
 <p class="small">シート／単体イラスト（文字なし）を読み込むと、切り分け → ふちなし透過 → 仕上げ → 書き出しまで自動。常時「高品質モード」：LINE仕様の上限いっぱいまで色数・解像度を自動で最大化します。</p>
 
 <div class="row">
@@ -84,6 +84,8 @@
   <select id="timing"><option value="ease" selected>緩急</option><option value="uniform">均等（ヌルヌル）</option></select>
   <label>キャラ</label>
   <select id="charSize"><option value="std" selected>標準</option><option value="big">大きめ</option></select>
+  <label>アイドル層</label>
+  <select id="idle"><option value="off" selected>なし</option><option value="on">あり（呼吸＋スウェイ）</option></select>
   <label><input type="checkbox" id="sparkle" checked> キラキラ</label>
   <label><input type="checkbox" id="dither" checked> ディザ</label>
 </div>
@@ -682,16 +684,34 @@ function composeAnim(poses, mode) {
     return c;
   });
   const sRatio = M.w / 320;
+  const idleOn = (($("idle") || {}).value || "off") === "on";
   const frames = [], durations = [];
   const pushFrame = (poseIdx, dur, lift, sy, ts) => {
     const c = document.createElement("canvas");
     c.width = M.w; c.height = M.h;
     const ctx = c.getContext("2d");
     const img = scaled[poseIdx];
-    const hgt = Math.round(img.height * sy);
-    const x = Math.round(charCx - img.width / 2);
-    const y = ground - hgt + Math.round(lift * sRatio);
-    ctx.drawImage(img, x, y, img.width, hgt);
+    let syF = sy, liftF = lift, xOff = 0, rot = 0;
+    if (idleOn && TOTAL_FRAMES > 0) {
+      const ph = (frames.length / TOTAL_FRAMES) * Math.PI * 2;
+      syF = sy * (1 + 0.013 * Math.sin(ph));
+      liftF = lift - 1.6 * Math.sin(ph);
+      xOff = 2.1 * Math.sin(ph + 1.2);
+      rot = 0.009 * Math.sin(ph + 0.8);
+    }
+    const hgt = Math.round(img.height * syF);
+    const x = Math.round(charCx - img.width / 2 + xOff * sRatio);
+    const y = ground - hgt + Math.round(liftF * sRatio);
+    if (rot !== 0) {
+      ctx.save();
+      ctx.translate(charCx, ground);
+      ctx.rotate(rot);
+      ctx.translate(-charCx, -ground);
+      ctx.drawImage(img, x, y, img.width, hgt);
+      ctx.restore();
+    } else {
+      ctx.drawImage(img, x, y, img.width, hgt);
+    }
     if (useSparkle) drawSparkles(ctx, frames.length, place === "left" ? 40 : 0, 0, sRatio);
     drawTextFrame(ctx, text, colorKey, frames.length, TOTAL_FRAMES, ts, M.w, M.h, sRatio);
     frames.push(c); durations.push(dur);
@@ -889,7 +909,8 @@ function currentRecipe() {
            text: $("text").value, color: $("color").value, textPos: $("textPos").value,
            plays: $("plays").value, tempo: ($("tempo") || {}).value || "1", sparkle: $("sparkle").checked,
            textPlace: ($("textPlace") || {}).value || "bottom", textAnim: ($("textAnim") || {}).value || "bounce",
-           timing: ($("timing") || {}).value || "ease", charSize: ($("charSize") || {}).value || "std" };
+           timing: ($("timing") || {}).value || "ease", charSize: ($("charSize") || {}).value || "std",
+           idle: ($("idle") || {}).value || "off" };
 }
 $("copyRecipe").addEventListener("click", () => { $("recipe").value = JSON.stringify(currentRecipe()); });
 $("loadRecipe").addEventListener("click", () => {
@@ -907,6 +928,7 @@ $("loadRecipe").addEventListener("click", () => {
     if (r.textAnim && $("textAnim")) $("textAnim").value = r.textAnim;
     if (r.timing && $("timing")) $("timing").value = r.timing;
     if (r.charSize && $("charSize")) $("charSize").value = r.charSize;
+    if (r.idle && $("idle")) $("idle").value = r.idle;
     if (r.sparkle !== undefined) $("sparkle").checked = !!r.sparkle;
     log("レシピを読み込みました。「作る」を押してください。");
   } catch (e) { log("レシピの形式が違います"); }

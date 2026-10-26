@@ -25,4 +25,4 @@ https://ozmoaiart-crypto.github.io/stamp-shokunin/
 2. ポーズ数・文字・文字色を合わせる（Museが作る「レシピ」を貼ってもOK）
 3. 「▶ 作る」→ プレビュー確認 → 各ボタンから保存
 
-v1.3.1
+v1.4
